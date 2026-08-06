@@ -36,8 +36,8 @@ go.work.sum
 docker-compose.override.yml
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
 
 # macOS
 .DS_Store
