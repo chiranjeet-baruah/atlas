@@ -20,6 +20,11 @@ profile.cov
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# Build output
+/bin/
+/app
+*.log
+
 # Go workspace file
 go.work
 go.work.sum
@@ -27,6 +32,12 @@ go.work.sum
 # env file
 .env
 
+# Local Compose overrides (not meant to be shared/committed)
+docker-compose.override.yml
+
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# macOS
+.DS_Store
