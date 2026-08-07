@@ -51,4 +51,25 @@ const (
 	// migrations/0001_init.up.sql exactly — verified against a live
 	// /engines/v1/embeddings call, not assumed.
 	EmbeddingDimension = 768
+
+	// MinExtractedTextChars is the minimum trimmed-text length below which
+	// an extraction is treated as "no usable text" and triggers the OCR
+	// fallback (or, if OCR also falls short, ErrNoExtractableText). Scanned
+	// pages collapse to "" here because pdftotext's form-feed page marker
+	// is whitespace under strings.TrimSpace. Confirmed against real OCR
+	// output in the design spike — see decisions.md.
+	MinExtractedTextChars = 100
+
+	// MaxOCRPages bounds how many pages the OCR fallback rasterizes and
+	// reads. OCR costs roughly a second per page (measured: ~1.3s/page
+	// combined pdftoppm+tesseract), so an unbounded page count risks
+	// blowing ResumeProcessingTimeout on a long scanned document. Resumes
+	// are essentially never longer than this in practice.
+	MaxOCRPages = 5
+
+	// OCRRasterDPI is the resolution pdftoppm rasterizes pages at before
+	// handing them to tesseract. Higher DPI improves OCR accuracy at the
+	// cost of time; 200 produced clean, accurate OCR text against a real
+	// scanned resume in the design spike — see decisions.md.
+	OCRRasterDPI = 200
 )

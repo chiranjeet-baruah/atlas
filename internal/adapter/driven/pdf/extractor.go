@@ -5,6 +5,9 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
+
+	"resumesearch/internal/constants"
 )
 
 // Extractor pulls text out of text-based PDFs by shelling out to
@@ -29,4 +32,13 @@ func (e *Extractor) ExtractText(ctx context.Context, path string) (string, error
 		return "", fmt.Errorf("pdftotext failed for %s: %w (stderr: %s)", path, err, stderr.String())
 	}
 	return stdout.String(), nil
+}
+
+// hasExtractableText reports whether s contains enough real text to be
+// worth keeping. pdftotext emits a lone form-feed ("\f") per page for
+// image-only PDFs; strings.TrimSpace treats that as whitespace, so a
+// scanned page collapses to an empty trimmed string here, same as a
+// truly empty extraction.
+func hasExtractableText(s string) bool {
+	return len(strings.TrimSpace(s)) >= constants.MinExtractedTextChars
 }
