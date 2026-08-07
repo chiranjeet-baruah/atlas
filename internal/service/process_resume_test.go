@@ -3,8 +3,10 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"resumesearch/internal/adapter/driven/pdf"
 	"resumesearch/internal/domain"
 	"resumesearch/internal/service"
 )
@@ -16,10 +18,11 @@ func TestProcessResume_Run(t *testing.T) {
 		// the resumeID Run is called with.
 		setup func() (*fakeRepo, *fakeModel, *fakeExtractor, string)
 
-		wantErr        bool
-		wantStatuses   []domain.Status
-		wantSkills     []string
-		wantChunkCount int
+		wantErr            bool
+		wantStatuses       []domain.Status
+		wantSkills         []string
+		wantChunkCount     int
+		wantModelNotCalled bool
 	}{
 		{
 			name: "happy path processes, normalizes skills, chunks, and marks DONE",
@@ -59,6 +62,21 @@ func TestProcessResume_Run(t *testing.T) {
 			},
 			wantErr:      true,
 			wantStatuses: []domain.Status{domain.StatusProcessing, domain.StatusFailed},
+		},
+		{
+			name: "no-extractable-text error marks FAILED without calling the model",
+			setup: func() (*fakeRepo, *fakeModel, *fakeExtractor, string) {
+				repo := &fakeRepo{GetByIDFn: func(ctx context.Context, id string) (domain.Resume, error) {
+					return domain.Resume{ID: "abc", FilePath: "/data/scanned.pdf"}, nil
+				}}
+				extractor := &fakeExtractor{ExtractTextFn: func(ctx context.Context, path string) (string, error) {
+					return "", fmt.Errorf("%w: /data/scanned.pdf (tried pdftotext and OCR)", pdf.ErrNoExtractableText)
+				}}
+				return repo, &fakeModel{}, extractor, "abc"
+			},
+			wantErr:            true,
+			wantStatuses:       []domain.Status{domain.StatusProcessing, domain.StatusFailed},
+			wantModelNotCalled: true,
 		},
 		{
 			name: "LLM extraction failure marks FAILED and propagates error",
@@ -137,6 +155,9 @@ func TestProcessResume_Run(t *testing.T) {
 			}
 			if tc.wantChunkCount > 0 && len(repo.SavedChunks) != tc.wantChunkCount {
 				t.Errorf("saved chunks = %d, want %d", len(repo.SavedChunks), tc.wantChunkCount)
+			}
+			if tc.wantModelNotCalled && model.ExtractCalled {
+				t.Error("expected model.Extract not to be called")
 			}
 		})
 	}

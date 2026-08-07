@@ -89,9 +89,12 @@ func (f *fakeRepo) Search(ctx context.Context, queryVec []float32, filters domai
 type fakeModel struct {
 	ExtractFn func(ctx context.Context, text string) (domain.ExtractedFields, error)
 	EmbedFn   func(ctx context.Context, text string) ([]float32, error)
+
+	ExtractCalled bool
 }
 
 func (f *fakeModel) Extract(ctx context.Context, text string) (domain.ExtractedFields, error) {
+	f.ExtractCalled = true
 	if f.ExtractFn != nil {
 		return f.ExtractFn(ctx, text)
 	}
