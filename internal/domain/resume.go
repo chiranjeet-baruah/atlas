@@ -9,6 +9,13 @@ import (
 // Driver adapters (HTTP) translate this into a 404; anything else is a 500.
 var ErrNotFound = errors.New("resume: not found")
 
+// ErrStatusNotRecorded wraps a processing error when the attempt to record
+// it (writeStatus, marking the resume FAILED) itself failed — e.g. the
+// database was genuinely unreachable. The Kafka consumer checks for this
+// with errors.Is and skips committing the offset so the message redelivers,
+// instead of committing it as though the failure were durably recorded.
+var ErrStatusNotRecorded = errors.New("resume: failure status could not be recorded")
+
 type Status string
 
 const (
@@ -18,6 +25,16 @@ const (
 	StatusFailed     Status = "FAILED"
 )
 
+// Stage tracks which point in the extract → classify → embed pipeline a
+// resume has reached. It is sweeper bookkeeping, not a status: a resume can
+// be StatusProcessing at any of the three stages, or StatusDone/StatusFailed
+// after any of them.
+const (
+	StageExtract  = "EXTRACT"
+	StageClassify = "CLASSIFY"
+	StageEmbed    = "EMBED"
+)
+
 // Resume is the core entity: one uploaded PDF and everything derived from it.
 type Resume struct {
 	ID              string
@@ -25,6 +42,8 @@ type Resume struct {
 	Filename        string
 	FilePath        string
 	Status          Status
+	Stage           string
+	RedriveCount    int
 	ErrorMessage    string
 	RawText         string
 	Skills          []string

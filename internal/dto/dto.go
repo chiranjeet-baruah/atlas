@@ -13,9 +13,15 @@ type UploadBatchResponse struct {
 }
 
 type StatusResponse struct {
-	ID           string `json:"id"`
-	Filename     string `json:"filename"`
-	Status       string `json:"status"`
+	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	Status   string `json:"status"`
+	// Stage names which point in the extract/classify/embed pipeline this
+	// resume has reached — answers "which stage is this stuck in" from the
+	// status endpoint directly, instead of grepping 3 workers' logs.
+	// RedriveCount is deliberately not exposed here: it's internal sweeper
+	// bookkeeping, not something a client needs.
+	Stage        string `json:"stage"`
 	ErrorMessage string `json:"error_message,omitempty"`
 }
 
@@ -54,6 +60,7 @@ func FromResume(r domain.Resume) StatusResponse {
 		ID:           r.ID,
 		Filename:     r.Filename,
 		Status:       string(r.Status),
+		Stage:        r.Stage,
 		ErrorMessage: r.ErrorMessage,
 	}
 }

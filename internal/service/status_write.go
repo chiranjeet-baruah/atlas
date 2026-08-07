@@ -1,0 +1,56 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"resumesearch/internal/constants"
+	"resumesearch/internal/domain"
+)
+
+// writeStatus records a resume's status without inheriting the caller's
+// context lifetime. Every stage use case calls this instead of
+// repo.UpdateStatus(ctx, ...) directly for its FAILED and terminal-success
+// writes.
+//
+// Without this, a status write made after a processing timeout reuses the
+// same ctx that just expired — so the write fails too, and the resume is
+// left permanently at StatusProcessing with nothing recording why. This was
+// confirmed against the live DB: 11 rows wedged at PROCESSING after an LLM
+// timeout, because the FAILED write that should have followed shared the
+// already-expired deadline. context.WithoutCancel strips the parent's
+// expired deadline/cancellation while keeping its values (e.g. trace IDs);
+// WithTimeout then gives the write its own short, fresh budget.
+func writeStatus(ctx context.Context, repo ResumeRepository, id string, status domain.Status, errMsg string) error {
+	wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), constants.StatusWriteTimeout)
+	defer cancel()
+	return repo.UpdateStatus(wctx, id, status, errMsg)
+}
+
+// failResume marks a resume FAILED via writeStatus and returns procErr,
+// the error that triggered the failure. If the FAILED write itself fails
+// (writeStatus's whole reason to exist doesn't make that impossible, just
+// far less likely — e.g. the database is genuinely down), the returned
+// error wraps both procErr and domain.ErrStatusNotRecorded via
+// errors.Join, so the Kafka consumer can tell "failure durably recorded,
+// safe to commit the offset" apart from "failure not recorded, redeliver"
+// using errors.Is, instead of committing an offset whose failure was never
+// actually written down.
+func failResume(ctx context.Context, repo ResumeRepository, id string, procErr error) error {
+	if statusErr := writeStatus(ctx, repo, id, domain.StatusFailed, procErr.Error()); statusErr != nil {
+		return fmt.Errorf("%w (and failed to record failure status: %w)", procErr, errors.Join(domain.ErrStatusNotRecorded, statusErr))
+	}
+	return procErr
+}
+
+// isTerminal reports whether status is a final state that should make a
+// stage's Run skip reprocessing on redelivery. This must be checked on
+// Resume.Status, never Resume.Stage: the embed stage in particular has no
+// AdvanceStage call after it (its terminal write is writeStatus(DONE)), so
+// a crash between SaveChunks and that write leaves a row at
+// stage=EMBED/status=PROCESSING — a state the sweeper is meant to redrive,
+// not a state a stage-based guard would mistake for "already done."
+func isTerminal(status domain.Status) bool {
+	return status == domain.StatusDone || status == domain.StatusFailed
+}

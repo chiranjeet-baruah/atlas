@@ -41,7 +41,11 @@ func TestNewProducer_CreatesTopicIfMissing(t *testing.T) {
 	t.Cleanup(func() { _ = producer.Close() })
 }
 
-func TestPublishResumeIngest_MessageIsReadable(t *testing.T) {
+// TestPublish_MessageIsReadable covers all three PublishResume* methods —
+// each is a thin wrapper around the shared publish helper targeting a
+// different stage's topic, so one table exercises all three rather than
+// three near-duplicate test functions.
+func TestPublish_MessageIsReadable(t *testing.T) {
 	brokers := startKafka(t)
 	ctx := context.Background()
 
@@ -51,28 +55,31 @@ func TestPublishResumeIngest_MessageIsReadable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = producer.Close() })
 
-	reader, err := kgo.NewClient(
-		kgo.SeedBrokers(brokers...),
-		kgo.ConsumerGroup("test-reader"),
-		kgo.ConsumeTopics(constants.KafkaTopic),
-	)
-	if err != nil {
-		t.Fatalf("failed to create reader client: %v", err)
-	}
-	t.Cleanup(reader.Close)
-
 	cases := []struct {
 		name     string
+		topic    string
+		publish  func(ctx context.Context, resumeID string) error
 		resumeID string
 	}{
-		{name: "typical resume id", resumeID: "resume-123"},
-		{name: "another resume id keeps key/value symmetry", resumeID: "resume-456"},
+		{name: "PublishResumeIngest targets the extract stage's topic", topic: constants.KafkaTopic, publish: producer.PublishResumeIngest, resumeID: "resume-123"},
+		{name: "PublishResumeExtracted targets the classify stage's topic", topic: constants.TopicResumeExtracted, publish: producer.PublishResumeExtracted, resumeID: "resume-456"},
+		{name: "PublishResumeClassified targets the embed stage's topic", topic: constants.TopicResumeClassified, publish: producer.PublishResumeClassified, resumeID: "resume-789"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := producer.PublishResumeIngest(ctx, tc.resumeID); err != nil {
-				t.Fatalf("PublishResumeIngest failed: %v", err)
+			reader, err := kgo.NewClient(
+				kgo.SeedBrokers(brokers...),
+				kgo.ConsumerGroup("test-reader-"+tc.topic),
+				kgo.ConsumeTopics(tc.topic),
+			)
+			if err != nil {
+				t.Fatalf("failed to create reader client: %v", err)
+			}
+			t.Cleanup(reader.Close)
+
+			if err := tc.publish(ctx, tc.resumeID); err != nil {
+				t.Fatalf("publish failed: %v", err)
 			}
 
 			readCtx, cancel := context.WithTimeout(ctx, 15*time.Second)

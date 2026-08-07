@@ -13,9 +13,10 @@ import (
 	"resumesearch/internal/constants"
 )
 
-// Producer publishes resume-ingest events. The message key is the
-// resumeID so Kafka's partitioning keeps all events for one resume
-// ordered, while still allowing parallel workers across resumes.
+// Producer publishes events for all three pipeline stages — implements
+// service.EventPublisher, service.ExtractedPublisher, and
+// service.ClassifiedPublisher. See publish's doc comment for the message
+// shape.
 type Producer struct {
 	client *kgo.Client
 }
@@ -31,27 +32,57 @@ const (
 	topicCreateBackoff = 2 * time.Second
 )
 
-// NewProducer connects to brokers and ensures constants.KafkaTopic exists
-// before returning — a fresh `docker compose up` starts Kafka with no
-// topics pre-created, and the first publish must not race that.
+// NewProducer connects to brokers and ensures every pipeline stage's topic
+// exists before returning — a fresh `docker compose up` starts Kafka with
+// no topics pre-created, and the first publish to any of them must not
+// race that. Both cmd/app/serve.go and cmd/app/worker.go construct a
+// Producer at startup (the worker needs one to publish extract/classify
+// results to the next stage's topic), so calling this from both covers a
+// cold-started worker that must not depend on serve having run first.
 func NewProducer(ctx context.Context, brokers []string) (*Producer, error) {
 	client, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
 	if err != nil {
 		return nil, fmt.Errorf("create kafka client: %w", err)
 	}
 
-	if err := ensureTopicWithRetry(ctx, client, constants.KafkaTopic); err != nil {
-		client.Close()
-		return nil, err
+	for _, topic := range allTopics {
+		if err := ensureTopicWithRetry(ctx, client, topic); err != nil {
+			client.Close()
+			return nil, err
+		}
 	}
 
 	return &Producer{client: client}, nil
 }
 
+// allTopics is every topic any pipeline stage publishes to. Keep this in
+// sync with the stage table in decisions.md if a stage is ever added.
+var allTopics = []string{
+	constants.KafkaTopic,
+	constants.TopicResumeExtracted,
+	constants.TopicResumeClassified,
+}
+
 func (p *Producer) PublishResumeIngest(ctx context.Context, resumeID string) error {
-	record := &kgo.Record{Topic: constants.KafkaTopic, Key: []byte(resumeID), Value: []byte(resumeID)}
+	return p.publish(ctx, constants.KafkaTopic, resumeID)
+}
+
+func (p *Producer) PublishResumeExtracted(ctx context.Context, resumeID string) error {
+	return p.publish(ctx, constants.TopicResumeExtracted, resumeID)
+}
+
+func (p *Producer) PublishResumeClassified(ctx context.Context, resumeID string) error {
+	return p.publish(ctx, constants.TopicResumeClassified, resumeID)
+}
+
+// publish is shared by all three PublishResume* methods: the message key
+// is the resumeID so Kafka's partitioning keeps all events for one resume
+// ordered on a given topic, while still allowing parallel workers across
+// resumes.
+func (p *Producer) publish(ctx context.Context, topic, resumeID string) error {
+	record := &kgo.Record{Topic: topic, Key: []byte(resumeID), Value: []byte(resumeID)}
 	if err := p.client.ProduceSync(ctx, record).FirstErr(); err != nil {
-		return fmt.Errorf("publish resume ingest event for %s: %w", resumeID, err)
+		return fmt.Errorf("publish event for %s to topic %s: %w", resumeID, topic, err)
 	}
 	return nil
 }

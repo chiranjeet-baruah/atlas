@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"time"
 
 	"resumesearch/internal/domain"
 )
@@ -11,16 +12,21 @@ import (
 // optional function field, so a given test only wires the behavior it
 // actually exercises; every call is also recorded for assertions.
 type fakeRepo struct {
-	CreateResumeFn   func(ctx context.Context, r *domain.Resume) error
-	UpdateStatusFn   func(ctx context.Context, id string, status domain.Status, errMsg string) error
-	SaveExtractionFn func(ctx context.Context, id, rawText string, fields domain.ExtractedFields) error
-	SaveChunksFn     func(ctx context.Context, resumeID string, chunks []domain.Chunk) error
-	GetByIDFn        func(ctx context.Context, id string) (domain.Resume, error)
-	GetByBatchIDFn   func(ctx context.Context, batchID string) ([]domain.Resume, error)
-	SearchFn         func(ctx context.Context, queryVec []float32, filters domain.SearchFilters, limit int) ([]domain.SearchResult, error)
+	CreateResumeFn         func(ctx context.Context, r *domain.Resume) error
+	UpdateStatusFn         func(ctx context.Context, id string, status domain.Status, errMsg string) error
+	AdvanceStageFn         func(ctx context.Context, id string, stage string) error
+	SaveRawTextFn          func(ctx context.Context, id, rawText string) error
+	SaveExtractedFieldsFn  func(ctx context.Context, id string, fields domain.ExtractedFields) error
+	SaveChunksFn           func(ctx context.Context, resumeID string, chunks []domain.Chunk) error
+	GetByIDFn              func(ctx context.Context, id string) (domain.Resume, error)
+	GetByBatchIDFn         func(ctx context.Context, batchID string) ([]domain.Resume, error)
+	SearchFn               func(ctx context.Context, queryVec []float32, filters domain.SearchFilters, limit int) ([]domain.SearchResult, error)
+	ClaimStaleForRedriveFn func(ctx context.Context, staleAfter time.Duration, maxRedrives, limit int) ([]domain.Resume, error)
 
 	CreatedResumes   []domain.Resume
 	StatusCalls      []domain.Status
+	StageCalls       []string
+	SavedRawText     string
 	SavedFields      domain.ExtractedFields
 	SavedChunks      []domain.Chunk
 	SearchGotVec     []float32
@@ -45,10 +51,26 @@ func (f *fakeRepo) UpdateStatus(ctx context.Context, id string, status domain.St
 	return nil
 }
 
-func (f *fakeRepo) SaveExtraction(ctx context.Context, id, rawText string, fields domain.ExtractedFields) error {
+func (f *fakeRepo) AdvanceStage(ctx context.Context, id string, stage string) error {
+	f.StageCalls = append(f.StageCalls, stage)
+	if f.AdvanceStageFn != nil {
+		return f.AdvanceStageFn(ctx, id, stage)
+	}
+	return nil
+}
+
+func (f *fakeRepo) SaveRawText(ctx context.Context, id, rawText string) error {
+	f.SavedRawText = rawText
+	if f.SaveRawTextFn != nil {
+		return f.SaveRawTextFn(ctx, id, rawText)
+	}
+	return nil
+}
+
+func (f *fakeRepo) SaveExtractedFields(ctx context.Context, id string, fields domain.ExtractedFields) error {
 	f.SavedFields = fields
-	if f.SaveExtractionFn != nil {
-		return f.SaveExtractionFn(ctx, id, rawText, fields)
+	if f.SaveExtractedFieldsFn != nil {
+		return f.SaveExtractedFieldsFn(ctx, id, fields)
 	}
 	return nil
 }
@@ -80,6 +102,13 @@ func (f *fakeRepo) Search(ctx context.Context, queryVec []float32, filters domai
 	f.SearchGotFilters = filters
 	if f.SearchFn != nil {
 		return f.SearchFn(ctx, queryVec, filters, limit)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) ClaimStaleForRedrive(ctx context.Context, staleAfter time.Duration, maxRedrives, limit int) ([]domain.Resume, error) {
+	if f.ClaimStaleForRedriveFn != nil {
+		return f.ClaimStaleForRedriveFn(ctx, staleAfter, maxRedrives, limit)
 	}
 	return nil, nil
 }
@@ -132,6 +161,36 @@ func (f *fakePublisher) PublishResumeIngest(ctx context.Context, resumeID string
 	f.Published = append(f.Published, resumeID)
 	if f.PublishResumeIngestFn != nil {
 		return f.PublishResumeIngestFn(ctx, resumeID)
+	}
+	return nil
+}
+
+// fakeExtractedPublisher is the single configurable ExtractedPublisher test
+// double shared by every use case test in this package.
+type fakeExtractedPublisher struct {
+	PublishResumeExtractedFn func(ctx context.Context, resumeID string) error
+	Published                []string
+}
+
+func (f *fakeExtractedPublisher) PublishResumeExtracted(ctx context.Context, resumeID string) error {
+	f.Published = append(f.Published, resumeID)
+	if f.PublishResumeExtractedFn != nil {
+		return f.PublishResumeExtractedFn(ctx, resumeID)
+	}
+	return nil
+}
+
+// fakeClassifiedPublisher is the single configurable ClassifiedPublisher
+// test double shared by every use case test in this package.
+type fakeClassifiedPublisher struct {
+	PublishResumeClassifiedFn func(ctx context.Context, resumeID string) error
+	Published                 []string
+}
+
+func (f *fakeClassifiedPublisher) PublishResumeClassified(ctx context.Context, resumeID string) error {
+	f.Published = append(f.Published, resumeID)
+	if f.PublishResumeClassifiedFn != nil {
+		return f.PublishResumeClassifiedFn(ctx, resumeID)
 	}
 	return nil
 }

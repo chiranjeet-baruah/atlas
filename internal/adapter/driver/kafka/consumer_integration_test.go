@@ -5,6 +5,7 @@ package kafka_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -15,7 +16,13 @@ import (
 
 	kafkadriver "resumesearch/internal/adapter/driver/kafka"
 	"resumesearch/internal/constants"
+	"resumesearch/internal/domain"
 )
+
+// testHandlerTimeout is a generous per-handler budget for these tests —
+// large enough that it never legitimately fires, so a real hang shows up
+// as a test timeout rather than a silently-misleading pass.
+const testHandlerTimeout = 15 * time.Second
 
 // createTopic explicitly creates topic before the test writes to it — the
 // confluent-local image used here does not auto-create topics on first
@@ -103,7 +110,7 @@ func TestConsume(t *testing.T) {
 				t.Fatalf("failed to seed messages: %v", err)
 			}
 
-			consumer, err := kafkadriver.NewConsumer(brokers)
+			consumer, err := kafkadriver.NewConsumer(brokers, constants.KafkaTopic, constants.ConsumerGroup, testHandlerTimeout)
 			if err != nil {
 				t.Fatalf("NewConsumer failed: %v", err)
 			}
@@ -144,4 +151,84 @@ func TestConsume(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestConsume_ErrStatusNotRecordedSkipsCommitSoMessageRedelivers locks in
+// the offset-commit policy fix: unlike an ordinary processing error (which
+// commits anyway — dealt with above), a handler error matching
+// domain.ErrStatusNotRecorded means the failure itself couldn't be durably
+// recorded, so the offset must be withheld and the message redelivered to
+// the next consumer in the same group. This can't be observed within a
+// single running Consumer (once a record leaves PollFetches, that session
+// won't re-fetch it locally regardless of commit state) — it's only
+// observable by restarting: a second Consumer joining the same group must
+// still receive the message.
+func TestConsume_ErrStatusNotRecordedSkipsCommitSoMessageRedelivers(t *testing.T) {
+	ctx := context.Background()
+	container, err := tckafka.Run(ctx, "confluentinc/confluent-local:7.6.0")
+	if err != nil {
+		t.Fatalf("failed to start kafka container: %v", err)
+	}
+	t.Cleanup(func() { _ = container.Terminate(ctx) })
+
+	brokers, err := container.Brokers(ctx)
+	if err != nil {
+		t.Fatalf("failed to get brokers: %v", err)
+	}
+
+	const topic = "resume.test.not-recorded"
+	const group = "resume-test-not-recorded-group"
+	createTopic(t, brokers, topic)
+
+	writer, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
+	if err != nil {
+		t.Fatalf("create writer client: %v", err)
+	}
+	t.Cleanup(writer.Close)
+	if err := writer.ProduceSync(ctx, &kgo.Record{Key: []byte("resume-x"), Value: []byte("resume-x"), Topic: topic}).FirstErr(); err != nil {
+		t.Fatalf("failed to seed message: %v", err)
+	}
+
+	firstCalls := runConsumerOnce(t, brokers, topic, group, func(ctx context.Context, resumeID string) error {
+		return fmt.Errorf("db down: %w", domain.ErrStatusNotRecorded)
+	})
+	if firstCalls != 1 {
+		t.Fatalf("expected the first consumer to receive the message once, got %d calls", firstCalls)
+	}
+
+	secondCalls := runConsumerOnce(t, brokers, topic, group, func(ctx context.Context, resumeID string) error {
+		return nil
+	})
+	if secondCalls != 1 {
+		t.Errorf("expected a second consumer in the same group to still receive the message (offset withheld), got %d calls", secondCalls)
+	}
+}
+
+// runConsumerOnce runs a fresh Consumer against topic/group until handler
+// has been called at least once, then stops it and returns the call count.
+func runConsumerOnce(t *testing.T, brokers []string, topic, group string, handler func(ctx context.Context, resumeID string) error) int {
+	t.Helper()
+
+	consumer, err := kafkadriver.NewConsumer(brokers, topic, group, testHandlerTimeout)
+	if err != nil {
+		t.Fatalf("NewConsumer failed: %v", err)
+	}
+	defer func() { _ = consumer.Close() }()
+
+	consumeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var calls int
+	done := make(chan struct{})
+	go func() {
+		_ = consumer.Consume(consumeCtx, func(ctx context.Context, resumeID string) error {
+			calls++
+			cancel()
+			return handler(ctx, resumeID)
+		})
+		close(done)
+	}()
+	<-done
+
+	return calls
 }

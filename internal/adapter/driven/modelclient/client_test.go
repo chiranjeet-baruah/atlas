@@ -1,13 +1,16 @@
 package modelclient_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"resumesearch/internal/adapter/driven/modelclient"
+	"resumesearch/internal/constants"
 	"resumesearch/internal/domain"
 )
 
@@ -177,6 +180,81 @@ func TestExtract(t *testing.T) {
 				t.Errorf("got %d attempts, want %d", attempt, tc.wantAttempt)
 			}
 		})
+	}
+}
+
+// TestExtract_BacksOffBetweenAttempts locks in the ctx-aware backoff added
+// alongside the per-attempt timeout: a retry against a model that just
+// failed must not fire immediately with zero delay.
+func TestExtract_BacksOffBetweenAttempts(t *testing.T) {
+	cases := []struct {
+		name        string
+		responses   []string
+		wantMinWait time.Duration // lower bound on elapsed wall-clock time
+	}{
+		{
+			name:        "succeeds first try — no backoff incurred",
+			responses:   []string{`{"skills":[],"years_experience":0,"location":""}`},
+			wantMinWait: 0,
+		},
+		{
+			name:        "one retry incurs exactly one backoff period",
+			responses:   []string{"not json", `{"skills":[],"years_experience":0,"location":""}`},
+			wantMinWait: constants.ExtractionRetryBackoff,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			attempt := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				content := tc.responses[min(attempt, len(tc.responses)-1)]
+				attempt++
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"choices": []map[string]any{{"message": map[string]any{"content": content}}},
+				})
+			}))
+			defer server.Close()
+
+			c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+			start := time.Now()
+			if _, err := c.Extract(t.Context(), "text"); err != nil {
+				t.Fatalf("Extract failed: %v", err)
+			}
+			if elapsed := time.Since(start); elapsed < tc.wantMinWait {
+				t.Errorf("elapsed %v, want at least %v", elapsed, tc.wantMinWait)
+			}
+		})
+	}
+}
+
+// TestExtract_CanceledContextStopsRetryingDuringBackoff ensures the backoff
+// wait is itself ctx-aware: canceling the caller's context must not force
+// Extract to wait out a full backoff period before returning.
+func TestExtract_CanceledContextStopsRetryingDuringBackoff(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": "not json"}}},
+		})
+	}))
+	defer server.Close()
+
+	c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	_, err := c.Extract(ctx, "text")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if elapsed >= constants.ExtractionRetryBackoff {
+		t.Errorf("Extract took %v to return after cancellation, want well under the %v backoff", elapsed, constants.ExtractionRetryBackoff)
 	}
 }
 

@@ -42,3 +42,34 @@ func TestErrNotFound_IsDistinctSentinel(t *testing.T) {
 		t.Error("expected an unrelated error not to match ErrNotFound")
 	}
 }
+
+func TestErrStatusNotRecorded_IsDistinctSentinel(t *testing.T) {
+	if !errors.Is(domain.ErrStatusNotRecorded, domain.ErrStatusNotRecorded) {
+		t.Error("expected ErrStatusNotRecorded to match itself via errors.Is")
+	}
+	if errors.Is(errors.New("some other error"), domain.ErrStatusNotRecorded) {
+		t.Error("expected an unrelated error not to match ErrStatusNotRecorded")
+	}
+	if errors.Is(domain.ErrNotFound, domain.ErrStatusNotRecorded) {
+		t.Error("expected ErrNotFound and ErrStatusNotRecorded to be distinct sentinels")
+	}
+}
+
+func TestStageValues(t *testing.T) {
+	cases := []struct {
+		name  string
+		stage string
+		want  string
+	}{
+		{"extract", domain.StageExtract, "EXTRACT"},
+		{"classify", domain.StageClassify, "CLASSIFY"},
+		{"embed", domain.StageEmbed, "EMBED"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.stage != tc.want {
+				t.Errorf("got %q, want %q", tc.stage, tc.want)
+			}
+		})
+	}
+}

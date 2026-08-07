@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
@@ -152,7 +153,7 @@ func TestGetByID_MissingReturnsErrNotFound(t *testing.T) {
 	}
 }
 
-// TestSaveExtraction_ZeroYearsExperienceStoresAsNull locks in the same
+// TestSaveExtractedFields_ZeroYearsExperienceStoresAsNull locks in the same
 // unknown-vs-asserted-zero distinction CreateResume already makes: a
 // zero-value YearsExperience from LLM extraction (meaning "couldn't
 // determine it") must be stored as SQL NULL, not literal 0, or MinYears
@@ -160,7 +161,7 @@ func TestGetByID_MissingReturnsErrNotFound(t *testing.T) {
 // years." GetByID/GetByBatchID COALESCE this column to 0 for display, so
 // this test queries the raw column directly to actually distinguish NULL
 // from 0.
-func TestSaveExtraction_ZeroYearsExperienceStoresAsNull(t *testing.T) {
+func TestSaveExtractedFields_ZeroYearsExperienceStoresAsNull(t *testing.T) {
 	pool := setupTestDB(t)
 	repo := postgres.NewRepository(pool)
 	ctx := context.Background()
@@ -170,8 +171,8 @@ func TestSaveExtraction_ZeroYearsExperienceStoresAsNull(t *testing.T) {
 		t.Fatalf("CreateResume failed: %v", err)
 	}
 
-	if err := repo.SaveExtraction(ctx, r.ID, "raw text", domain.ExtractedFields{Skills: []string{"go"}, YearsExperience: 0, Location: "Remote"}); err != nil {
-		t.Fatalf("SaveExtraction failed: %v", err)
+	if err := repo.SaveExtractedFields(ctx, r.ID, domain.ExtractedFields{Skills: []string{"go"}, YearsExperience: 0, Location: "Remote"}); err != nil {
+		t.Fatalf("SaveExtractedFields failed: %v", err)
 	}
 
 	var years *float64
@@ -180,6 +181,132 @@ func TestSaveExtraction_ZeroYearsExperienceStoresAsNull(t *testing.T) {
 	}
 	if years != nil {
 		t.Errorf("expected years_experience to be NULL for an unextracted/zero value, got %v", *years)
+	}
+}
+
+func TestSaveRawText(t *testing.T) {
+	pool := setupTestDB(t)
+	repo := postgres.NewRepository(pool)
+	ctx := context.Background()
+
+	r := &domain.Resume{BatchID: "66666666-6666-6666-6666-666666666666", Filename: "a.pdf", FilePath: "/a", Status: domain.StatusPending}
+	if err := repo.CreateResume(ctx, r); err != nil {
+		t.Fatalf("CreateResume failed: %v", err)
+	}
+
+	if err := repo.SaveRawText(ctx, r.ID, "extracted resume text"); err != nil {
+		t.Fatalf("SaveRawText failed: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	if got.RawText != "extracted resume text" {
+		t.Errorf("got raw text %q, want %q", got.RawText, "extracted resume text")
+	}
+}
+
+func TestAdvanceStage(t *testing.T) {
+	pool := setupTestDB(t)
+	repo := postgres.NewRepository(pool)
+	ctx := context.Background()
+
+	r := &domain.Resume{BatchID: "77777777-7777-7777-7777-777777777777", Filename: "a.pdf", FilePath: "/a", Status: domain.StatusPending}
+	if err := repo.CreateResume(ctx, r); err != nil {
+		t.Fatalf("CreateResume failed: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	if got.Stage != domain.StageExtract {
+		t.Fatalf("expected a freshly created resume's stage to default to %q, got %q", domain.StageExtract, got.Stage)
+	}
+
+	if err := repo.AdvanceStage(ctx, r.ID, domain.StageClassify); err != nil {
+		t.Fatalf("AdvanceStage failed: %v", err)
+	}
+
+	got, err = repo.GetByID(ctx, r.ID)
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	if got.Stage != domain.StageClassify {
+		t.Errorf("got stage %q, want %q", got.Stage, domain.StageClassify)
+	}
+}
+
+func TestClaimStaleForRedrive(t *testing.T) {
+	pool := setupTestDB(t)
+	repo := postgres.NewRepository(pool)
+	ctx := context.Background()
+
+	fresh := &domain.Resume{BatchID: "88888888-8888-8888-8888-888888888881", Filename: "fresh.pdf", FilePath: "/fresh", Status: domain.StatusProcessing}
+	stale := &domain.Resume{BatchID: "88888888-8888-8888-8888-888888888882", Filename: "stale.pdf", FilePath: "/stale", Status: domain.StatusProcessing}
+	done := &domain.Resume{BatchID: "88888888-8888-8888-8888-888888888883", Filename: "done.pdf", FilePath: "/done", Status: domain.StatusDone}
+	for _, r := range []*domain.Resume{fresh, stale, done} {
+		if err := repo.CreateResume(ctx, r); err != nil {
+			t.Fatalf("CreateResume failed: %v", err)
+		}
+	}
+
+	// Backdate stale's and done's updated_at directly — CreateResume always
+	// sets it to now(), so a real staleness gap has to be created by hand
+	// in this test rather than by waiting out staleAfter.
+	if _, err := pool.Exec(ctx, "UPDATE resumes SET updated_at = now() - interval '1 hour' WHERE id IN ($1, $2)", stale.ID, done.ID); err != nil {
+		t.Fatalf("backdate updated_at: %v", err)
+	}
+
+	claimed, err := repo.ClaimStaleForRedrive(ctx, 5*time.Minute, 5, 10)
+	if err != nil {
+		t.Fatalf("ClaimStaleForRedrive failed: %v", err)
+	}
+
+	if len(claimed) != 1 || claimed[0].ID != stale.ID {
+		t.Fatalf("expected to claim only the stale, non-terminal resume, got %+v", claimed)
+	}
+	if claimed[0].RedriveCount != 1 {
+		t.Errorf("expected the claim itself to increment redrive_count to 1, got %d", claimed[0].RedriveCount)
+	}
+	if claimed[0].Stage != domain.StageExtract {
+		t.Errorf("got stage %q, want %q", claimed[0].Stage, domain.StageExtract)
+	}
+
+	// A second call within the same staleAfter window must not re-claim
+	// the row it just bumped updated_at on — this is what makes
+	// updated_at safe to double as the claim marker across multiple
+	// worker replicas' sweepers.
+	claimedAgain, err := repo.ClaimStaleForRedrive(ctx, 5*time.Minute, 5, 10)
+	if err != nil {
+		t.Fatalf("ClaimStaleForRedrive (second call) failed: %v", err)
+	}
+	if len(claimedAgain) != 0 {
+		t.Errorf("expected no rows claimed on an immediate second call, got %+v", claimedAgain)
+	}
+}
+
+func TestClaimStaleForRedrive_RowsAtMaxRedrivesAreNotReclaimed(t *testing.T) {
+	pool := setupTestDB(t)
+	repo := postgres.NewRepository(pool)
+	ctx := context.Background()
+
+	r := &domain.Resume{BatchID: "99999999-9999-9999-9999-999999999999", Filename: "poison.pdf", FilePath: "/poison", Status: domain.StatusProcessing}
+	if err := repo.CreateResume(ctx, r); err != nil {
+		t.Fatalf("CreateResume failed: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE resumes SET updated_at = now() - interval '1 hour', redrive_count = 6 WHERE id = $1", r.ID); err != nil {
+		t.Fatalf("backdate updated_at and set redrive_count: %v", err)
+	}
+
+	const maxRedrives = 5
+	claimed, err := repo.ClaimStaleForRedrive(ctx, 5*time.Minute, maxRedrives, 10)
+	if err != nil {
+		t.Fatalf("ClaimStaleForRedrive failed: %v", err)
+	}
+	if len(claimed) != 0 {
+		t.Errorf("expected a resume already past maxRedrives not to be reclaimed, got %+v", claimed)
 	}
 }
 

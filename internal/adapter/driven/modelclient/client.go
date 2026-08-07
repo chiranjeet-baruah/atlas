@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"resumesearch/internal/constants"
 	"resumesearch/internal/domain"
@@ -54,22 +55,45 @@ Return ONLY the JSON object, no other text.
 Resume text:
 %s`
 
+// Extract retries up to constants.MaxExtractionRetries times. Each attempt
+// gets its own constants.LLMAttemptTimeout budget rather than sharing one
+// deadline across all attempts — otherwise a slow first attempt that blocks
+// to the deadline leaves nothing for attempts 2 and 3, so the effective
+// retry budget silently collapses to whatever's left of the caller's
+// deadline instead of 3 independent chances.
 func (c *Client) Extract(ctx context.Context, text string) (domain.ExtractedFields, error) {
 	var lastErr error
 	for attempt := 1; attempt <= constants.MaxExtractionRetries; attempt++ {
-		content, err := c.chatCompletion(ctx, fmt.Sprintf(extractionPrompt, text))
-		if err != nil {
-			lastErr = err
-			continue
+		fields, err := c.extractOnce(ctx, text, attempt)
+		if err == nil {
+			return fields, nil
 		}
-		var fields domain.ExtractedFields
-		if err := json.Unmarshal([]byte(extractJSONObject(content)), &fields); err != nil {
-			lastErr = fmt.Errorf("invalid JSON from model (attempt %d): %w", attempt, err)
-			continue
+		lastErr = err
+
+		if attempt < constants.MaxExtractionRetries {
+			select {
+			case <-ctx.Done():
+				return domain.ExtractedFields{}, fmt.Errorf("extraction failed after %d attempts: %w", attempt, lastErr)
+			case <-time.After(constants.ExtractionRetryBackoff):
+			}
 		}
-		return fields, nil
 	}
 	return domain.ExtractedFields{}, fmt.Errorf("extraction failed after %d attempts: %w", constants.MaxExtractionRetries, lastErr)
+}
+
+func (c *Client) extractOnce(ctx context.Context, text string, attempt int) (domain.ExtractedFields, error) {
+	attemptCtx, cancel := context.WithTimeout(ctx, constants.LLMAttemptTimeout)
+	defer cancel()
+
+	content, err := c.chatCompletion(attemptCtx, fmt.Sprintf(extractionPrompt, text))
+	if err != nil {
+		return domain.ExtractedFields{}, err
+	}
+	var fields domain.ExtractedFields
+	if err := json.Unmarshal([]byte(extractJSONObject(content)), &fields); err != nil {
+		return domain.ExtractedFields{}, fmt.Errorf("invalid JSON from model (attempt %d): %w", attempt, err)
+	}
+	return fields, nil
 }
 
 // extractJSONObject strips common local-model formatting noise — markdown

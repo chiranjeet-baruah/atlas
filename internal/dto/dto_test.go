@@ -16,13 +16,13 @@ func TestFromResume(t *testing.T) {
 	}{
 		{
 			name: "done resume",
-			in:   domain.Resume{ID: "abc-123", Filename: "jane.pdf", Status: domain.StatusDone},
-			want: dto.StatusResponse{ID: "abc-123", Filename: "jane.pdf", Status: "DONE"},
+			in:   domain.Resume{ID: "abc-123", Filename: "jane.pdf", Status: domain.StatusDone, Stage: domain.StageEmbed},
+			want: dto.StatusResponse{ID: "abc-123", Filename: "jane.pdf", Status: "DONE", Stage: "EMBED"},
 		},
 		{
-			name: "failed resume carries error message",
-			in:   domain.Resume{ID: "def-456", Filename: "bob.pdf", Status: domain.StatusFailed, ErrorMessage: "corrupt pdf"},
-			want: dto.StatusResponse{ID: "def-456", Filename: "bob.pdf", Status: "FAILED", ErrorMessage: "corrupt pdf"},
+			name: "failed resume carries error message and its stuck stage",
+			in:   domain.Resume{ID: "def-456", Filename: "bob.pdf", Status: domain.StatusFailed, Stage: domain.StageClassify, ErrorMessage: "corrupt pdf"},
+			want: dto.StatusResponse{ID: "def-456", Filename: "bob.pdf", Status: "FAILED", Stage: "CLASSIFY", ErrorMessage: "corrupt pdf"},
 		},
 	}
 	for _, tc := range cases {

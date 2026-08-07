@@ -3,19 +3,99 @@ package constants
 import "time"
 
 const (
-	// KafkaTopic is the topic workers consume resume-ingest events from.
+	// KafkaTopic is the topic the extract stage's workers consume from.
+	// Unchanged from before the pipeline was split into stages, so existing
+	// committed offsets and any in-flight messages are unaffected.
 	KafkaTopic = "resume.ingest.requested"
 
-	// ConsumerGroup lets multiple worker replicas share partitions safely.
+	// ConsumerGroup lets multiple extract-stage worker replicas share
+	// partitions safely.
 	ConsumerGroup = "resume-workers"
 
-	// ResumeProcessingTimeout bounds how long the worker will wait on a
-	// single resume's PDF extraction + LLM + embedding calls before giving
-	// up. Without this, a single hung Docker Model Runner request or a
-	// wedged pdftotext subprocess blocks the consumer's single processing
-	// goroutine forever — no more resumes are ever processed until the
-	// process is manually restarted.
-	ResumeProcessingTimeout = 2 * time.Minute
+	// TopicResumeExtracted and GroupResumeClassify are the classify
+	// stage's topic/consumer-group: published once the extract stage's
+	// AdvanceStage write succeeds.
+	TopicResumeExtracted = "resume.text.extracted"
+	GroupResumeClassify  = "resume-classify-workers"
+
+	// TopicResumeClassified and GroupResumeEmbed are the embed stage's
+	// topic/consumer-group: published once the classify stage's
+	// AdvanceStage write succeeds.
+	TopicResumeClassified = "resume.fields.classified"
+	GroupResumeEmbed      = "resume-embed-workers"
+
+	// ExtractStageTimeout bounds the extract stage's consumer: pdftotext's
+	// fast path is near-instant, and the OCR fallback's measured worst case
+	// is ~6.5s (5 pages × ~1.3s/page, see decisions.md) — 30s leaves ample
+	// margin without letting a wedged pdftoppm/tesseract subprocess block
+	// the consumer forever.
+	ExtractStageTimeout = 30 * time.Second
+
+	// ClassifyStageTimeout bounds the classify stage's consumer: 3
+	// independent LLM attempts (see MaxExtractionRetries, LLMAttemptTimeout)
+	// plus slack for the surrounding save/publish work.
+	ClassifyStageTimeout = time.Duration(MaxExtractionRetries)*LLMAttemptTimeout + 30*time.Second
+
+	// StatusWriteTimeout bounds writeStatus's own UpdateStatus call. It is
+	// deliberately short and independent of the caller's (possibly already
+	// expired) context — see internal/service/status_write.go — because a
+	// status write is a single fast Postgres UPDATE and never legitimately
+	// needs longer.
+	StatusWriteTimeout = 5 * time.Second
+
+	// LLMAttemptTimeout bounds a single LLM extraction attempt. Measured,
+	// not guessed: three real calls to qwen3 with a real (short) resume
+	// took 36.9s/42.4s/45.7s (timings.predicted_ms), producing 888-1147
+	// completion tokens — qwen3 is a reasoning model and spends most of
+	// that time on chain-of-thought before the JSON. 60s leaves ~15s of
+	// margin over the worst observed call on a short resume; re-measure if
+	// production resumes run substantially longer than that sample.
+	LLMAttemptTimeout = 60 * time.Second
+
+	// EmbedAttemptTimeout bounds a single chunk's Embed call within the
+	// embed stage. EmbedStageSlack is added on top of
+	// len(chunks)*EmbedAttemptTimeout to size that stage's overall budget,
+	// since embedding cost scales with chunk count, not a fixed constant.
+	EmbedAttemptTimeout = 15 * time.Second
+	EmbedStageSlack     = 15 * time.Second
+
+	// MaxEmbedChunks and EmbedStageTimeout exist only to give the embed
+	// stage's Kafka consumer a fixed backstop handlerTimeout — every
+	// consumer needs one (see kafka.NewConsumer), but the embed stage's
+	// real per-message budget is computed at runtime from the actual chunk
+	// count (see embedBudget in embed_resume.go), which is normally much
+	// smaller than this ceiling. MaxEmbedChunks is a generous upper bound
+	// on how many chunks a single resume could realistically produce; this
+	// ceiling only matters for a pathologically long or malformed document.
+	MaxEmbedChunks    = 50
+	EmbedStageTimeout = time.Duration(MaxEmbedChunks)*EmbedAttemptTimeout + EmbedStageSlack
+
+	// SweepInterval is how often the redrive sweeper (internal/service/redrive_sweep.go)
+	// runs. SweepStaleAfter is how long a resume must sit with no progress
+	// (updated_at unchanged) before the sweeper claims it as stuck.
+	//
+	// It is defined relative to EmbedStageTimeout — not a standalone
+	// constant — because EmbedStageTimeout is the largest of the 3 stage
+	// timeouts AND the embed stage never advances updated_at between its
+	// initial UpdateStatus(PROCESSING) and the final SaveChunks/writeStatus
+	// (unlike extract/classify, it has no AdvanceStage call mid-stage). A
+	// resume legitimately embedding a large chunk count can sit with a
+	// stale updated_at for up to EmbedStageTimeout; if SweepStaleAfter were
+	// shorter than that (it was previously a flat 5m, less than
+	// EmbedStageTimeout's 12m45s), the sweeper would claim and republish a
+	// resume that is still being correctly processed, double-embedding it
+	// and burning its redrive_count for no reason. Tying it to
+	// EmbedStageTimeout with a margin means a future change to
+	// MaxEmbedChunks/EmbedAttemptTimeout can't silently reintroduce this.
+	//
+	// MaxRedrives caps how many times a single resume can be redriven
+	// before the sweeper gives up and marks it FAILED, so a genuinely
+	// broken PDF or a model that never returns valid JSON doesn't retry
+	// forever. SweepBatchSize caps rows claimed per sweep tick.
+	SweepInterval   = 2 * time.Minute
+	SweepStaleAfter = EmbedStageTimeout + 2*time.Minute
+	MaxRedrives     = 5
+	SweepBatchSize  = 50
 
 	// MaxUploadBytes bounds one batch-upload request's total body size, so
 	// a single request can't exhaust memory/disk on this single-process
@@ -45,6 +125,12 @@ const (
 	// for structured field extraction (small/local models are the highest-risk
 	// component for schema adherence).
 	MaxExtractionRetries = 3
+
+	// ExtractionRetryBackoff is a short pause between LLM extraction
+	// attempts. Without it, a retry against a model that just failed (e.g.
+	// mid-restart, or momentarily overloaded) fires immediately with zero
+	// delay.
+	ExtractionRetryBackoff = 500 * time.Millisecond
 
 	// EmbeddingDimension is the output size of ai/nomic-embed-text-v1.5.
 	// Must match the `resume_chunks.embedding VECTOR(N)` column in
