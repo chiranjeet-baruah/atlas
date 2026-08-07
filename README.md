@@ -51,7 +51,7 @@ flowchart LR
 docker compose up --build
 ```
 
-First run pulls the LLM/embedding models via Docker Model Runner (`ai/qwen3` and `ai/nomic-embed-text-v1.5`) — expect that step to take a few minutes. If the `ai/qwen3` pull ever fails partway through with a registry error, swap it for a smaller model you already have (e.g. `ai/llama3.2`) in a local `docker-compose.override.yml` — see [decisions.md](decisions.md) for why this exists.
+First run pulls the LLM/embedding models via Docker Model Runner (`ai/llama3.2` and `ai/nomic-embed-text-v1.5`) — expect that step to take a few minutes, and expect the very first extraction request afterward to pay an extra ~25s while the LLM loads into the runner (see `LLMAttemptTimeout` in `internal/constants/constants.go`).
 
 ## Try it with the sample resumes
 

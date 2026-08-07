@@ -44,12 +44,15 @@ const (
 	StatusWriteTimeout = 5 * time.Second
 
 	// LLMAttemptTimeout bounds a single LLM extraction attempt. Measured,
-	// not guessed: three real calls to qwen3 with a real (short) resume
-	// took 36.9s/42.4s/45.7s (timings.predicted_ms), producing 888-1147
-	// completion tokens — qwen3 is a reasoning model and spends most of
-	// that time on chain-of-thought before the JSON. 60s leaves ~15s of
-	// margin over the worst observed call on a short resume; re-measure if
-	// production resumes run substantially longer than that sample.
+	// not guessed: three real calls to docker.io/ai/llama3.2 with a real
+	// (short) resume took 24.97s/1.53s/1.86s — the first call pays for
+	// loading the model into Docker Model Runner, subsequent calls hit the
+	// warm model and finish in ~2s. The cold-start cost recurs whenever
+	// the model gets evicted for idleness or the worker restarts, so the
+	// budget is sized off that worst case, not the warm-path average: 60s
+	// leaves ~35s of margin over the observed cold start on a short
+	// resume. Re-measure if production resumes run substantially longer
+	// than that sample, or if the model is changed again.
 	LLMAttemptTimeout = 60 * time.Second
 
 	// EmbedAttemptTimeout bounds a single chunk's Embed call within the

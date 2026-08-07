@@ -76,7 +76,7 @@ services:
 
 models:
   llm:
-    model: ai/qwen3
+    model: docker.io/ai/llama3.2:latest
   embed:
     model: ai/nomic-embed-text-v1.5
 
