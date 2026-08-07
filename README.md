@@ -2,7 +2,7 @@
 
 High-performance PDF ingestion and indexing service for AI-powered knowledge retrieval and vector search.
 
-Bulk-upload PDF resumes, process them asynchronously (Kafka → text extraction → LLM field extraction → chunked embeddings), and search them with a hybrid semantic + filtered query — all via `docker compose up`.
+Bulk-upload PDF resumes, process them asynchronously through a 3-stage Kafka pipeline (text extraction → LLM field extraction → chunked embeddings), and search them with a hybrid semantic + filtered query — all via `docker compose up`.
 
 ## Architecture
 
@@ -10,17 +10,29 @@ Hexagonal (ports & adapters): `domain` (framework-free entities) → `service` (
 
 ### Ingestion flow
 
+Each resume moves through 3 independent Kafka topics/consumer groups — extract, classify, embed — so a slow LLM call can't block extraction or embedding for other resumes on the same stage. A `stage` column tracks which one a resume is currently on; `GET /resumes/:id` exposes it directly. A periodic redrive sweeper reclaims any resume that hasn't advanced in a while (crashed mid-stage, before its next publish) and republishes it to the right topic, up to a bounded number of retries before giving up and marking it `FAILED`.
+
 ```mermaid
 flowchart LR
     C[Client] -->|POST /resumes/batch<br/>multipart, N files| A[app serve / Gin]
     A -->|write files| V[(shared volume)]
-    A -->|INSERT status=PENDING| DB[(Postgres)]
-    A -->|publish resume_id| K[[Kafka: resume.ingest.requested]]
-    K --> W[worker consumer group]
-    W -->|extract text: pdftotext| W
-    W -->|LLM extract fields,<br/>validate+retry| W
-    W -->|chunk ~512 tokens, embed each| W
-    W -->|UPSERT + status=DONE/FAILED| DB
+    A -->|INSERT status=PENDING<br/>stage=EXTRACT| DB[(Postgres)]
+    A -->|publish resume_id| K1[[resume.ingest.requested]]
+    K1 --> WE[extract worker]
+    WE -->|pdftotext / OCR fallback| WE
+    WE -->|save raw_text, stage=CLASSIFY| DB
+    WE -->|publish resume_id| K2[[resume.text.extracted]]
+    K2 --> WC[classify worker]
+    WC -->|LLM extract fields,<br/>validate+retry| WC
+    WC -->|save fields, stage=EMBED| DB
+    WC -->|publish resume_id| K3[[resume.fields.classified]]
+    K3 --> WB[embed worker]
+    WB -->|chunk ~512 tokens, embed each| WB
+    WB -->|UPSERT chunks, status=DONE/FAILED| DB
+    SW[redrive sweeper] -.->|reclaim stale resume,<br/>republish to its stage's topic| K1
+    SW -.-> K2
+    SW -.-> K3
+    DB -.->|scan for stale rows| SW
 ```
 
 ### Query flow
@@ -49,6 +61,7 @@ curl -F "files=@data/resumes/01_alice.pdf" -F "files=@data/resumes/02_bruno.pdf"
 
 curl http://localhost:8080/resumes/batch/<batch_id>
 # poll until every resume shows "status": "DONE"
+# ("stage" shows which of EXTRACT/CLASSIFY/EMBED a still-PROCESSING resume is on)
 
 curl -X POST http://localhost:8080/search \
   -H "Content-Type: application/json" \
