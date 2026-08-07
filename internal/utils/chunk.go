@@ -2,46 +2,47 @@ package utils
 
 import "strings"
 
-// RecursiveSplit splits text into chunks of at most maxTokens words
-// (a word-count approximation of tokens — adequate for the extraction
-// scale this project runs at). It tries paragraph boundaries first,
-// falling back to sentence boundaries, then a hard word-count cut.
-// No overlap between chunks (see constants.ChunkSizeTokens doc comment
-// for why overlap was deliberately skipped).
-func RecursiveSplit(text string, maxTokens int) []string {
+// RecursiveSplit splits text into chunks of at most maxWords words. It
+// tries paragraph boundaries first, falling back to sentence boundaries,
+// then a hard word-count cut. No overlap between chunks (see
+// constants.ChunkSizeWords doc comment for why overlap was deliberately
+// skipped, and for why the caller's cap is sized well below the
+// embedding model's real token limit despite this function counting
+// words, not tokens).
+func RecursiveSplit(text string, maxWords int) []string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
 	}
-	if maxTokens <= 0 {
-		// hardSplit's `for i := 0; i < len(words); i += maxTokens` never
-		// advances i if maxTokens <= 0 — guard here rather than there so
+	if maxWords <= 0 {
+		// hardSplit's `for i := 0; i < len(words); i += maxWords` never
+		// advances i if maxWords <= 0 — guard here rather than there so
 		// every caller of the exported entrypoint is protected.
 		return nil
 	}
 
 	words := strings.Fields(text)
-	if len(words) <= maxTokens {
+	if len(words) <= maxWords {
 		return []string{text}
 	}
 
 	paragraphs := strings.Split(text, "\n\n")
 	if len(paragraphs) > 1 {
-		return splitUnits(paragraphs, maxTokens, "\n\n")
+		return splitUnits(paragraphs, maxWords, "\n\n")
 	}
 
 	sentences := strings.Split(text, ". ")
 	if len(sentences) > 1 {
-		return splitUnits(sentences, maxTokens, ". ")
+		return splitUnits(sentences, maxWords, ". ")
 	}
 
-	return hardSplit(words, maxTokens)
+	return hardSplit(words, maxWords)
 }
 
 // splitUnits greedily packs units (paragraphs or sentences) into chunks
-// no larger than maxTokens words, falling back to hardSplit for any
-// single unit that alone exceeds maxTokens.
-func splitUnits(units []string, maxTokens int, joiner string) []string {
+// no larger than maxWords words, falling back to hardSplit for any
+// single unit that alone exceeds maxWords.
+func splitUnits(units []string, maxWords int, joiner string) []string {
 	var chunks []string
 	var current []string
 	currentWords := 0
@@ -61,13 +62,13 @@ func splitUnits(units []string, maxTokens int, joiner string) []string {
 		}
 		wordCount := len(strings.Fields(unit))
 
-		if wordCount > maxTokens {
+		if wordCount > maxWords {
 			flush()
-			chunks = append(chunks, hardSplit(strings.Fields(unit), maxTokens)...)
+			chunks = append(chunks, hardSplit(strings.Fields(unit), maxWords)...)
 			continue
 		}
 
-		if currentWords+wordCount > maxTokens {
+		if currentWords+wordCount > maxWords {
 			flush()
 		}
 		current = append(current, unit)
@@ -78,10 +79,10 @@ func splitUnits(units []string, maxTokens int, joiner string) []string {
 }
 
 // hardSplit is the fallback: cut a word slice into fixed-size windows.
-func hardSplit(words []string, maxTokens int) []string {
+func hardSplit(words []string, maxWords int) []string {
 	var chunks []string
-	for i := 0; i < len(words); i += maxTokens {
-		end := min(i+maxTokens, len(words))
+	for i := 0; i < len(words); i += maxWords {
+		end := min(i+maxWords, len(words))
 		chunks = append(chunks, strings.Join(words[i:end], " "))
 	}
 	return chunks

@@ -115,11 +115,25 @@ const (
 	// legitimately approach this size.
 	MaxSearchBodyBytes = 64 << 10 // 64 KiB
 
-	// ChunkSizeTokens: recursive fixed-size chunking, ~512 tokens, no overlap.
-	// Validated against 2026 RAG chunking benchmarks (recursive splitting
-	// outperformed semantic/section-based chunking on retrieval accuracy;
-	// overlap showed no measurable benefit in recent studies) — see decisions.md.
-	ChunkSizeTokens = 512
+	// ChunkSizeWords: recursive fixed-size chunking, no overlap. Deliberately
+	// named in words, not tokens — utils.RecursiveSplit counts words
+	// (strings.Fields), and this project has no access to the embedding
+	// model's real tokenizer (Docker Model Runner doesn't expose a
+	// tokenize endpoint; checked, 404s). Recursive splitting itself is
+	// validated against 2026 RAG chunking benchmarks (outperformed
+	// semantic/section-based chunking on retrieval accuracy; overlap
+	// showed no measurable benefit in recent studies) — see decisions.md.
+	//
+	// The word:token ratio is not 1:1 and was previously assumed close
+	// enough — wrong in production: 3 real resumes' first chunk measured
+	// 380/415/381 words but 515/616/603 tokens (ratio 1.36-1.58x, driven by
+	// URLs, emails, and OCR/PDF-icon-glyph noise fragmenting into many
+	// subword tokens per "word"), overflowing the embedding model's
+	// 512-token physical batch size and failing the whole resume. 256
+	// words tolerates a real ratio up to 2.0x before hitting that limit —
+	// comfortable margin above the worst measured 1.58x — without needing
+	// to guess at real token counts.
+	ChunkSizeWords = 256
 
 	// SearchResultLimit is the default number of ranked results returned.
 	SearchResultLimit = 20

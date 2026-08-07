@@ -47,7 +47,7 @@ func (uc *EmbedResumeUseCase) Run(ctx context.Context, resumeID string) error {
 		return fmt.Errorf("mark resume %s processing: %w", resumeID, err)
 	}
 
-	textChunks := utils.RecursiveSplit(resume.RawText, constants.ChunkSizeTokens)
+	textChunks := utils.RecursiveSplit(resume.RawText, constants.ChunkSizeWords)
 
 	// Embedding cost scales with chunk count, so the stage's budget is
 	// computed from the actual count rather than a fixed constant (see
