@@ -24,7 +24,17 @@ DMR, Ollama, OpenAI, vLLM — they all speak basically the same OpenAI-compatibl
 
 Started with segmentio/kafka-go — pure Go, no cgo, everyone uses it. Got told to switch to franz-go mid-build and honestly it turned out better: consumer-group join is noticeably faster (my integration tests went from tens of seconds to sub-second per subtest, which I did not expect), and the `kadm` package's `CreateTopics` is a lot cleaner than kafka-go's `Conn.Controller()` dance. Because the port interfaces (`EventPublisher`/`EventConsumer`) were already there insulating the rest of the app from this, the swap only touched the two adapter packages and their tests. Nothing else even noticed.
 
-## Skipping OCR
+## OCR fallback for scanned PDFs
+
+Originally skipped OCR entirely (see below, kept for context on what was rejected and why). Revisited after silent-failure reports: scanned/image-only PDFs were extracting to a lone form-feed byte and passing through the whole pipeline as a junk "success" (StatusDone, empty fields, zero chunks) with no visible error.
+
+Added a fallback: pdftoppm rasterizes pages, tesseract OCRs each one, shelled out via os/exec exactly like pdftotext already is. This sidesteps both original objections — no cgo (gosseract was the rejected option, not the tesseract CLI), and no need for an HTTP interface (the earlier objection was about a bare "docker run" tesseract image; shelling out from the existing worker process needs no daemon or API at all). If pdftotext and OCR both come up short, ExtractText now returns ErrNoExtractableText instead of silently succeeding — the resume is marked FAILED with a clear reason instead of DONE with junk data.
+
+Known gap: resumes already marked DONE with blank extractions from before this fix are not backfilled. Out of scope for this change; would need a separate reprocessing pass if addressed later.
+
+Considered running poppler/tesseract as separate Docker Hub images (`minidocks/poppler`, `jitesoft/tesseract-ocr`) instead of apt-get. Rejected: both are ephemeral CLI-only containers, not services. Using them as `docker run` sidecars needs a mounted Docker socket (privilege-escalation risk, contradicts "no extra moving parts"); copying single binaries via multi-stage COPY risks musl/glibc or cross-distro shared-library mismatches against the debian:bookworm-slim final image. Plain `apt-get install tesseract-ocr` next to the existing poppler-utils line avoids all of this.
+
+## Skipping OCR (superseded above)
 
 Scope was text-based PDFs from the start. Looked briefly at `gosseract` (cgo tesseract binding) and a tesseract Docker image, but the image is CLI-only with no HTTP interface, which doesn't fit a long-running compose service well. Scanned resumes are just not supported, documented as future work.
 
