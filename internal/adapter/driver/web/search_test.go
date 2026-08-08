@@ -16,10 +16,10 @@ import (
 )
 
 type stubSearchRunner struct {
-	resp    dto.SearchResponse
-	err     error
-	gotReq  dto.SearchRequest
-	called  bool
+	resp   dto.SearchResponse
+	err    error
+	gotReq dto.SearchRequest
+	called bool
 }
 
 func (s *stubSearchRunner) Run(ctx context.Context, req dto.SearchRequest) (dto.SearchResponse, error) {
@@ -155,8 +155,8 @@ func TestSearchSubmitHandler_UseCaseError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (fragment renders the error inline, not a full error page), got %d: %s", rec.Code, rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "embedding service unreachable") {
 		t.Errorf("expected error message in body, got %s", rec.Body.String())

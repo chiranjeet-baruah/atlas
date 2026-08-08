@@ -16,10 +16,10 @@ func TestRenderError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name           string
-		err            error
-		wantStatus     int
-		wantSubstring  string
+		name          string
+		err           error
+		wantStatus    int
+		wantSubstring string
 	}{
 		{
 			name:          "domain.ErrNotFound maps to 404 with not_found_page",

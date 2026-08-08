@@ -74,7 +74,11 @@ func NewSearchSubmitHandler(uc searchRunner) gin.HandlerFunc {
 
 		resp, err := uc.Run(c.Request.Context(), req)
 		if err != nil {
-			renderError(c, err)
+			// Renders inline inside the fragment at 200, not through
+			// renderError: htmx does not swap a non-2xx response into its
+			// target by default, so a 500 full-page response here would
+			// leave #results empty with the error invisible to the user.
+			c.HTML(http.StatusOK, "search_results", searchResultsView{Error: err.Error()})
 			return
 		}
 

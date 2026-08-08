@@ -25,7 +25,7 @@ func (s *stubBatchStatusRunner) ByBatchID(ctx context.Context, batchID string) (
 	return s.resp, s.err
 }
 
-func batchStatusCases() []struct {
+func batchPageCases() []struct {
 	name        string
 	stub        *stubBatchStatusRunner
 	wantStatus  int
@@ -47,13 +47,13 @@ func batchStatusCases() []struct {
 			wantBodyHas: "a.pdf",
 		},
 		{
-			name:        "domain.ErrNotFound renders not-found page",
+			name:        "domain.ErrNotFound renders the not-found page",
 			stub:        &stubBatchStatusRunner{err: fmt.Errorf("get batch batch-1: %w", domain.ErrNotFound)},
 			wantStatus:  http.StatusNotFound,
 			wantBodyHas: "Not found",
 		},
 		{
-			name:        "any other error renders generic error page",
+			name:        "any other error renders the generic error page",
 			stub:        &stubBatchStatusRunner{err: errors.New("db unreachable")},
 			wantStatus:  http.StatusInternalServerError,
 			wantBodyHas: "db unreachable",
@@ -61,9 +61,40 @@ func batchStatusCases() []struct {
 	}
 }
 
+func batchRowsCases() []struct {
+	name        string
+	stub        *stubBatchStatusRunner
+	wantBodyHas string
+} {
+	return []struct {
+		name        string
+		stub        *stubBatchStatusRunner
+		wantBodyHas string
+	}{
+		{
+			name: "found batch renders its resumes",
+			stub: &stubBatchStatusRunner{resp: dto.BatchStatusResponse{
+				BatchID: "batch-1",
+				Resumes: []dto.StatusResponse{{ID: "r1", Filename: "a.pdf", Status: "DONE", Stage: "EMBED"}},
+			}},
+			wantBodyHas: "a.pdf",
+		},
+		{
+			name:        "domain.ErrNotFound renders inline in the fragment, not a 404 page",
+			stub:        &stubBatchStatusRunner{err: fmt.Errorf("get batch batch-1: %w", domain.ErrNotFound)},
+			wantBodyHas: "not found",
+		},
+		{
+			name:        "any other error renders inline in the fragment, not a 500 page",
+			stub:        &stubBatchStatusRunner{err: errors.New("db unreachable")},
+			wantBodyHas: "db unreachable",
+		},
+	}
+}
+
 func TestBatchPageHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, tc := range batchStatusCases() {
+	for _, tc := range batchPageCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			router := gin.New()
 			router.SetHTMLTemplate(web.ParseTemplates())
@@ -85,7 +116,7 @@ func TestBatchPageHandler(t *testing.T) {
 
 func TestBatchRowsHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, tc := range batchStatusCases() {
+	for _, tc := range batchRowsCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			router := gin.New()
 			router.SetHTMLTemplate(web.ParseTemplates())
@@ -95,8 +126,8 @@ func TestBatchRowsHandler(t *testing.T) {
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
-			if rec.Code != tc.wantStatus {
-				t.Fatalf("expected status %d, got %d: %s", tc.wantStatus, rec.Code, rec.Body.String())
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200 (fragment always renders inline, even on error), got %d: %s", rec.Code, rec.Body.String())
 			}
 			if !strings.Contains(rec.Body.String(), tc.wantBodyHas) {
 				t.Errorf("expected body to contain %q, got %s", tc.wantBodyHas, rec.Body.String())
