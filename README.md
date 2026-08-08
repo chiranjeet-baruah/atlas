@@ -72,6 +72,8 @@ curl -X POST http://localhost:8080/search \
 
 ## Web UI
 
+After `docker compose up --build`, open `http://localhost:8080/ui/upload` in a browser.
+
 A minimal server-rendered UI lives alongside the JSON API on the same port: `/ui/upload` (multipart upload form), `/ui/batch/<id>` (status table with a manual Refresh button — no auto-polling), and `/ui/search` (the same search filters as `POST /search`, rendered as a table). It's a thin HTML-rendering layer in front of the same use cases the JSON API calls — no separate business logic.
 
 A use-case failure never shows its raw internal error in the browser: the page renders a generic message plus a short slug (e.g. `internal-error`), while the real error goes to the server logs. The JSON API is unchanged and still returns the raw error in its response — see `decisions.md` for why.
