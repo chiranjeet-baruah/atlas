@@ -17,6 +17,7 @@ import (
 	"resumesearch/internal/adapter/driven/modelclient"
 	"resumesearch/internal/adapter/driven/postgres"
 	httpdriver "resumesearch/internal/adapter/driver/http"
+	webdriver "resumesearch/internal/adapter/driver/web"
 	"resumesearch/internal/service"
 )
 
@@ -53,6 +54,7 @@ func serveCmd() *cobra.Command {
 			router.GET("/resumes/:id", httpdriver.NewStatusHandler(statusUC))
 			router.GET("/resumes/batch/:batch_id", httpdriver.NewBatchStatusHandler(statusUC))
 			router.POST("/search", httpdriver.NewSearchHandler(searchUC))
+			webdriver.New(router, uploadUC, statusUC, searchUC)
 
 			port := os.Getenv("HTTP_PORT")
 			if port == "" {
