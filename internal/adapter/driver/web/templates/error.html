@@ -1,0 +1,17 @@
+{{define "not_found_page"}}
+<!doctype html>
+<html><head><title>Not found</title><link rel="stylesheet" href="/ui/static/style.css"></head>
+<body>
+<h1>Not found</h1>
+<p>We couldn't find what you're looking for.</p>
+</body></html>
+{{end}}
+
+{{define "error_page"}}
+<!doctype html>
+<html><head><title>Error</title><link rel="stylesheet" href="/ui/static/style.css"></head>
+<body>
+<h1>Something went wrong</h1>
+<p>{{.Error}}</p>
+</body></html>
+{{end}}
