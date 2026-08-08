@@ -44,6 +44,7 @@ Status updates are manual, not automatic. The batch page renders a status table 
 - Bad form input (empty query, non-numeric `min_years`, zero files on upload): re-render the originating form with an inline error message, HTTP 200.
 - `domain.ErrNotFound` (unknown batch/resume id): simple "not found" page, HTTP 404.
 - Any other use-case error: generic error page, HTTP 500, no internal error detail or stack trace rendered.
+- Exception: `GET /ui/batch/:batch_id/rows` and `POST /ui/search` are htmx-fetched fragments, not full-page navigations — htmx does not swap a non-2xx response into its target by default, so their use-case errors render the same generic message inline inside the fragment at HTTP 200 instead of through the 404/500 page.
 
 ## Styling
 
