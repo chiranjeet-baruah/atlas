@@ -22,7 +22,7 @@ func TestParseTemplates_RendersErrorPages(t *testing.T) {
 	}{
 		{
 			templateName:  "error_page",
-			data:          map[string]any{"Error": "boom"},
+			data:          map[string]any{"Message": "boom", "Slug": "test-slug"},
 			wantSubstring: "boom",
 		},
 		{

@@ -1,7 +1,9 @@
 package web
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,9 +31,9 @@ func TestRenderError(t *testing.T) {
 		},
 		{
 			name:          "generic error maps to 500 with error_page",
-			err:           errors.New("something bad happened"),
+			err:           errors.New("something bad happened involving host 10.0.0.9"),
 			wantStatus:    http.StatusInternalServerError,
-			wantSubstring: "something bad happened",
+			wantSubstring: "Reference: internal-error",
 		},
 	}
 
@@ -54,6 +56,49 @@ func TestRenderError(t *testing.T) {
 			}
 			if !strings.Contains(w.Body.String(), tc.wantSubstring) {
 				t.Errorf("expected body to contain %q, got %s", tc.wantSubstring, w.Body.String())
+			}
+			if strings.Contains(w.Body.String(), "10.0.0.9") {
+				t.Errorf("internal error detail leaked into response body: %s", w.Body.String())
+			}
+		})
+	}
+}
+
+func TestClassifyError(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		wantStatus  int
+		wantSlug    string
+		wantMessage string
+	}{
+		{
+			name:        "domain.ErrNotFound maps to not-found",
+			err:         fmt.Errorf("get batch batch-1: %w", domain.ErrNotFound),
+			wantStatus:  http.StatusNotFound,
+			wantSlug:    "not-found",
+			wantMessage: "We couldn't find what you were looking for.",
+		},
+		{
+			name:        "any other error maps to internal-error",
+			err:         errors.New("db unreachable at 10.0.0.5:5432"),
+			wantStatus:  http.StatusInternalServerError,
+			wantSlug:    "internal-error",
+			wantMessage: "Something went wrong. Please try again.",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			status, slug, message := classifyError(context.Background(), tc.err)
+			if status != tc.wantStatus {
+				t.Errorf("expected status %d, got %d", tc.wantStatus, status)
+			}
+			if slug != tc.wantSlug {
+				t.Errorf("expected slug %q, got %q", tc.wantSlug, slug)
+			}
+			if message != tc.wantMessage {
+				t.Errorf("expected message %q, got %q", tc.wantMessage, message)
 			}
 		})
 	}
