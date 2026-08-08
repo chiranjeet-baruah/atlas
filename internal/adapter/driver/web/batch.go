@@ -19,9 +19,10 @@ type batchStatusRunner interface {
 // set only by NewBatchRowsHandler's fragment-error path; a zero-value Error
 // renders the normal resume table.
 type batchRowsView struct {
-	BatchID string
-	Error   string
-	Resumes []dto.StatusResponse
+	BatchID   string
+	Error     string
+	ErrorSlug string
+	Resumes   []dto.StatusResponse
 }
 
 // NewBatchPageHandler renders the full batch status page. A use-case error
@@ -52,7 +53,8 @@ func NewBatchRowsHandler(uc batchStatusRunner) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		resp, err := uc.ByBatchID(c.Request.Context(), c.Param("batch_id"))
 		if err != nil {
-			c.HTML(http.StatusOK, "batch_rows", batchRowsView{Error: err.Error()})
+			_, slug, message := classifyError(c.Request.Context(), err)
+			c.HTML(http.StatusOK, "batch_rows", batchRowsView{Error: message, ErrorSlug: slug})
 			return
 		}
 		c.HTML(http.StatusOK, "batch_rows", batchRowsView{BatchID: resp.BatchID, Resumes: resp.Resumes})

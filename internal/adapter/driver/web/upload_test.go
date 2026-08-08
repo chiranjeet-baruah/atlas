@@ -59,6 +59,7 @@ func TestUploadSubmitHandler(t *testing.T) {
 		wantStatus    int
 		wantLocation  string
 		wantBodyHas   string
+		wantBodyLacks string
 		wantRunCalled bool
 	}{
 		{
@@ -80,9 +81,10 @@ func TestUploadSubmitHandler(t *testing.T) {
 		{
 			name:          "use case error renders generic error page",
 			files:         map[string][]byte{"a.pdf": []byte("%PDF-1.4 fake")},
-			stub:          &stubUploadRunner{err: errors.New("kafka unreachable")},
+			stub:          &stubUploadRunner{err: errors.New("kafka unreachable at 10.0.0.8:9092")},
 			wantStatus:    http.StatusInternalServerError,
-			wantBodyHas:   "kafka unreachable",
+			wantBodyHas:   "Reference: internal-error",
+			wantBodyLacks: "10.0.0.8",
 			wantRunCalled: true,
 		},
 	}
@@ -105,6 +107,9 @@ func TestUploadSubmitHandler(t *testing.T) {
 			}
 			if tc.wantBodyHas != "" && !strings.Contains(rec.Body.String(), tc.wantBodyHas) {
 				t.Errorf("expected body to contain %q, got %s", tc.wantBodyHas, rec.Body.String())
+			}
+			if tc.wantBodyLacks != "" && strings.Contains(rec.Body.String(), tc.wantBodyLacks) {
+				t.Errorf("expected body not to contain %q, got %s", tc.wantBodyLacks, rec.Body.String())
 			}
 			if tc.stub.called != tc.wantRunCalled {
 				t.Errorf("expected Run called=%v, got %v", tc.wantRunCalled, tc.stub.called)

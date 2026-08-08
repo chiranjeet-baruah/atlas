@@ -18,7 +18,7 @@
 {{define "search_results"}}
 <div id="results">
 {{if .Error}}
-<p class="error">{{.Error}}</p>
+<p class="error">{{.Error}}{{if .ErrorSlug}} (ref: {{.ErrorSlug}}){{end}}</p>
 {{else}}
 <table>
 <thead><tr><th>Filename</th><th>Skills</th><th>Years</th><th>Location</th><th>distance (lower = closer)</th></tr></thead>

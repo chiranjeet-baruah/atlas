@@ -26,16 +26,18 @@ func (s *stubBatchStatusRunner) ByBatchID(ctx context.Context, batchID string) (
 }
 
 func batchPageCases() []struct {
-	name        string
-	stub        *stubBatchStatusRunner
-	wantStatus  int
-	wantBodyHas string
+	name          string
+	stub          *stubBatchStatusRunner
+	wantStatus    int
+	wantBodyHas   string
+	wantBodyLacks string
 } {
 	return []struct {
-		name        string
-		stub        *stubBatchStatusRunner
-		wantStatus  int
-		wantBodyHas string
+		name          string
+		stub          *stubBatchStatusRunner
+		wantStatus    int
+		wantBodyHas   string
+		wantBodyLacks string
 	}{
 		{
 			name: "found batch renders its resumes",
@@ -53,23 +55,26 @@ func batchPageCases() []struct {
 			wantBodyHas: "Not found",
 		},
 		{
-			name:        "any other error renders the generic error page",
-			stub:        &stubBatchStatusRunner{err: errors.New("db unreachable")},
-			wantStatus:  http.StatusInternalServerError,
-			wantBodyHas: "db unreachable",
+			name:          "any other error renders the generic error page",
+			stub:          &stubBatchStatusRunner{err: errors.New("db unreachable at 10.0.0.5:5432")},
+			wantStatus:    http.StatusInternalServerError,
+			wantBodyHas:   "Reference: internal-error",
+			wantBodyLacks: "10.0.0.5",
 		},
 	}
 }
 
 func batchRowsCases() []struct {
-	name        string
-	stub        *stubBatchStatusRunner
-	wantBodyHas string
+	name          string
+	stub          *stubBatchStatusRunner
+	wantBodyHas   string
+	wantBodyLacks string
 } {
 	return []struct {
-		name        string
-		stub        *stubBatchStatusRunner
-		wantBodyHas string
+		name          string
+		stub          *stubBatchStatusRunner
+		wantBodyHas   string
+		wantBodyLacks string
 	}{
 		{
 			name: "found batch renders its resumes",
@@ -82,12 +87,13 @@ func batchRowsCases() []struct {
 		{
 			name:        "domain.ErrNotFound renders inline in the fragment, not a 404 page",
 			stub:        &stubBatchStatusRunner{err: fmt.Errorf("get batch batch-1: %w", domain.ErrNotFound)},
-			wantBodyHas: "not found",
+			wantBodyHas: "find what you were looking for",
 		},
 		{
-			name:        "any other error renders inline in the fragment, not a 500 page",
-			stub:        &stubBatchStatusRunner{err: errors.New("db unreachable")},
-			wantBodyHas: "db unreachable",
+			name:          "any other error renders inline in the fragment, not a 500 page",
+			stub:          &stubBatchStatusRunner{err: errors.New("db unreachable at 10.0.0.5:5432")},
+			wantBodyHas:   "Something went wrong",
+			wantBodyLacks: "10.0.0.5",
 		},
 	}
 }
@@ -110,6 +116,9 @@ func TestBatchPageHandler(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), tc.wantBodyHas) {
 				t.Errorf("expected body to contain %q, got %s", tc.wantBodyHas, rec.Body.String())
 			}
+			if tc.wantBodyLacks != "" && strings.Contains(rec.Body.String(), tc.wantBodyLacks) {
+				t.Errorf("expected body not to contain %q, got %s", tc.wantBodyLacks, rec.Body.String())
+			}
 		})
 	}
 }
@@ -131,6 +140,9 @@ func TestBatchRowsHandler(t *testing.T) {
 			}
 			if !strings.Contains(rec.Body.String(), tc.wantBodyHas) {
 				t.Errorf("expected body to contain %q, got %s", tc.wantBodyHas, rec.Body.String())
+			}
+			if tc.wantBodyLacks != "" && strings.Contains(rec.Body.String(), tc.wantBodyLacks) {
+				t.Errorf("expected body not to contain %q, got %s", tc.wantBodyLacks, rec.Body.String())
 			}
 			if !strings.Contains(rec.Body.String(), `id="rows"`) {
 				t.Errorf("expected the batch_rows fragment, not a full error page, got %s", rec.Body.String())

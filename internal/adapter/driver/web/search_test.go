@@ -128,7 +128,7 @@ func TestSearchSubmitHandler_Success(t *testing.T) {
 func TestSearchSubmitHandler_UseCaseError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	stub := &stubSearchRunner{err: errors.New("embedding service unreachable")}
+	stub := &stubSearchRunner{err: errors.New("embedding service unreachable at 10.0.0.7:9000")}
 	router := gin.New()
 	router.SetHTMLTemplate(web.ParseTemplates())
 	router.POST("/ui/search", web.NewSearchSubmitHandler(stub))
@@ -140,8 +140,11 @@ func TestSearchSubmitHandler_UseCaseError(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 (fragment renders the error inline, not a full error page), got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "embedding service unreachable") {
-		t.Errorf("expected error message in body, got %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "Something went wrong") {
+		t.Errorf("expected generic error message in body, got %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "10.0.0.7") {
+		t.Errorf("internal error detail leaked into response body: %s", rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), `id="results"`) {
 		t.Errorf("expected the search_results fragment, not a full error page, got %s", rec.Body.String())

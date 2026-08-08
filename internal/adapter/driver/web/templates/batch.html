@@ -14,7 +14,7 @@
 <thead><tr><th>Filename</th><th>Status</th><th>Stage</th><th>Error</th></tr></thead>
 <tbody>
 {{if .Error}}
-<tr><td colspan="4">{{.Error}}</td></tr>
+<tr><td colspan="4">{{.Error}} (ref: {{.ErrorSlug}})</td></tr>
 {{else}}
 {{range .Resumes}}
 <tr><td>{{.Filename}}</td><td>{{.Status}}</td><td>{{.Stage}}</td><td>{{.ErrorMessage}}</td></tr>

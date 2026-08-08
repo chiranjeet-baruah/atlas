@@ -22,8 +22,9 @@ type searchRunner interface {
 // successful search (Results set), so both cases swap into the same #results
 // target.
 type searchResultsView struct {
-	Error   string
-	Results []dto.SearchResultDTO
+	Error     string
+	ErrorSlug string
+	Results   []dto.SearchResultDTO
 }
 
 // NewSearchPageHandler renders the empty search form.
@@ -78,7 +79,8 @@ func NewSearchSubmitHandler(uc searchRunner) gin.HandlerFunc {
 			// renderError: htmx does not swap a non-2xx response into its
 			// target by default, so a 500 full-page response here would
 			// leave #results empty with the error invisible to the user.
-			c.HTML(http.StatusOK, "search_results", searchResultsView{Error: err.Error()})
+			_, slug, message := classifyError(c.Request.Context(), err)
+			c.HTML(http.StatusOK, "search_results", searchResultsView{Error: message, ErrorSlug: slug})
 			return
 		}
 
