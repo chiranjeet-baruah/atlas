@@ -143,6 +143,9 @@ func TestSearchSubmitHandler_UseCaseError(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "Something went wrong") {
 		t.Errorf("expected generic error message in body, got %s", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), "(ref: internal-error)") {
+		t.Errorf("expected slug reference in body, got %s", rec.Body.String())
+	}
 	if strings.Contains(rec.Body.String(), "10.0.0.7") {
 		t.Errorf("internal error detail leaked into response body: %s", rec.Body.String())
 	}

@@ -65,16 +65,18 @@ func batchPageCases() []struct {
 }
 
 func batchRowsCases() []struct {
-	name          string
-	stub          *stubBatchStatusRunner
-	wantBodyHas   string
-	wantBodyLacks string
+	name           string
+	stub           *stubBatchStatusRunner
+	wantBodyHas    string
+	wantBodyHasRef string
+	wantBodyLacks  string
 } {
 	return []struct {
-		name          string
-		stub          *stubBatchStatusRunner
-		wantBodyHas   string
-		wantBodyLacks string
+		name           string
+		stub           *stubBatchStatusRunner
+		wantBodyHas    string
+		wantBodyHasRef string
+		wantBodyLacks  string
 	}{
 		{
 			name: "found batch renders its resumes",
@@ -90,10 +92,11 @@ func batchRowsCases() []struct {
 			wantBodyHas: "find what you were looking for",
 		},
 		{
-			name:          "any other error renders inline in the fragment, not a 500 page",
-			stub:          &stubBatchStatusRunner{err: errors.New("db unreachable at 10.0.0.5:5432")},
-			wantBodyHas:   "Something went wrong",
-			wantBodyLacks: "10.0.0.5",
+			name:           "any other error renders inline in the fragment, not a 500 page",
+			stub:           &stubBatchStatusRunner{err: errors.New("db unreachable at 10.0.0.5:5432")},
+			wantBodyHas:    "Something went wrong",
+			wantBodyHasRef: "(ref: internal-error)",
+			wantBodyLacks:  "10.0.0.5",
 		},
 	}
 }
@@ -140,6 +143,9 @@ func TestBatchRowsHandler(t *testing.T) {
 			}
 			if !strings.Contains(rec.Body.String(), tc.wantBodyHas) {
 				t.Errorf("expected body to contain %q, got %s", tc.wantBodyHas, rec.Body.String())
+			}
+			if tc.wantBodyHasRef != "" && !strings.Contains(rec.Body.String(), tc.wantBodyHasRef) {
+				t.Errorf("expected body to contain slug reference %q, got %s", tc.wantBodyHasRef, rec.Body.String())
 			}
 			if tc.wantBodyLacks != "" && strings.Contains(rec.Body.String(), tc.wantBodyLacks) {
 				t.Errorf("expected body not to contain %q, got %s", tc.wantBodyLacks, rec.Body.String())
