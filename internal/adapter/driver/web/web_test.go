@@ -1,4 +1,3 @@
-// internal/adapter/driver/web/web_test.go
 package web_test
 
 import (
@@ -62,6 +61,49 @@ func TestNew_RegistersAllRoutes(t *testing.T) {
 
 			if rec.Code != tc.wantStatus {
 				t.Errorf("expected status %d, got %d: %s", tc.wantStatus, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestPageHandlers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cases := []struct {
+		name        string
+		path        string
+		handler     gin.HandlerFunc
+		wantBodyHas string
+	}{
+		{
+			name:        "upload page renders the upload form",
+			path:        "/ui/upload",
+			handler:     web.NewUploadPageHandler(),
+			wantBodyHas: "Upload resumes",
+		},
+		{
+			name:        "search page renders the search form",
+			path:        "/ui/search",
+			handler:     web.NewSearchPageHandler(),
+			wantBodyHas: "Search resumes",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			router := gin.New()
+			router.SetHTMLTemplate(web.ParseTemplates())
+			router.GET(tc.path, tc.handler)
+
+			req := httptest.NewRequest("GET", tc.path, nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), tc.wantBodyHas) {
+				t.Errorf("expected body to contain %q, got %s", tc.wantBodyHas, rec.Body.String())
 			}
 		})
 	}

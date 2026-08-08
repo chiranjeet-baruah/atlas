@@ -37,12 +37,10 @@ func TestRenderError(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create a fresh engine for each test case
 			engine := gin.New()
 			engine.SetHTMLTemplate(ParseTemplates())
 
-			// Set up a route that calls renderError with the test error
-			testErr := tc.err // Capture in closure
+			testErr := tc.err
 			engine.GET("/test", func(c *gin.Context) {
 				renderError(c, testErr)
 			})

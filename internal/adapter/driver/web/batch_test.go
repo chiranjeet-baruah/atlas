@@ -132,6 +132,9 @@ func TestBatchRowsHandler(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), tc.wantBodyHas) {
 				t.Errorf("expected body to contain %q, got %s", tc.wantBodyHas, rec.Body.String())
 			}
+			if !strings.Contains(rec.Body.String(), `id="rows"`) {
+				t.Errorf("expected the batch_rows fragment, not a full error page, got %s", rec.Body.String())
+			}
 		})
 	}
 }

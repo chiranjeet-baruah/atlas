@@ -1,4 +1,3 @@
-// internal/adapter/driver/web/batch.go
 package web
 
 import (

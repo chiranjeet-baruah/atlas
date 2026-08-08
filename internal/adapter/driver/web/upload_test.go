@@ -49,24 +49,6 @@ func newMultipartUploadRequest(t *testing.T, files map[string][]byte) *http.Requ
 	return req
 }
 
-func TestUploadPageHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.SetHTMLTemplate(web.ParseTemplates())
-	router.GET("/ui/upload", web.NewUploadPageHandler())
-
-	req := httptest.NewRequest("GET", "/ui/upload", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "Upload resumes") {
-		t.Errorf("expected form heading, got %s", rec.Body.String())
-	}
-}
-
 func TestUploadSubmitHandler(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

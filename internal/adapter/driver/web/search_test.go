@@ -34,24 +34,6 @@ func newSearchFormRequest(form url.Values) *http.Request {
 	return req
 }
 
-func TestSearchPageHandler(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.SetHTMLTemplate(web.ParseTemplates())
-	router.GET("/ui/search", web.NewSearchPageHandler())
-
-	req := httptest.NewRequest("GET", "/ui/search", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rec.Code)
-	}
-	if !strings.Contains(rec.Body.String(), "Search resumes") {
-		t.Errorf("expected form heading, got %s", rec.Body.String())
-	}
-}
-
 func TestSearchSubmitHandler_ValidationErrors(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -160,5 +142,8 @@ func TestSearchSubmitHandler_UseCaseError(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "embedding service unreachable") {
 		t.Errorf("expected error message in body, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `id="results"`) {
+		t.Errorf("expected the search_results fragment, not a full error page, got %s", rec.Body.String())
 	}
 }

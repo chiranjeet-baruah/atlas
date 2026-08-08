@@ -70,6 +70,10 @@ curl -X POST http://localhost:8080/search \
 
 `data/resumes/` ships 12 short, clearly-fake sample resumes with varied skills, years of experience, and locations so the search filters have something real to differentiate.
 
+## Web UI
+
+A minimal server-rendered UI lives alongside the JSON API on the same port: `/ui/upload` (multipart upload form), `/ui/batch/<id>` (status table with a manual Refresh button — no auto-polling), and `/ui/search` (the same search filters as `POST /search`, rendered as a table). It's a thin HTML-rendering layer in front of the same use cases the JSON API calls — no separate business logic.
+
 ## Scaling workers
 
 ```bash

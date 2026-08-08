@@ -25,7 +25,7 @@ Template naming convention: each page template defines a single top-level `{{def
 | GET | `/ui/search` | Search form page |
 | POST | `/ui/search` | Validate input, call `searchUC.Search`, render results fragment |
 
-`POST /ui/upload` duplicates the ~10 lines of multipart-parsing logic already in `internal/adapter/driver/http/upload_handler.go` rather than extracting a shared helper — consistent with the repo's existing pattern of keeping each thin driver adapter self-contained.
+`POST /ui/upload` parses multipart files via the shared `internal/adapter/driver/multipartform.ParseUploadFiles` helper, which also backs the JSON API's upload handler — this is the one shared helper in the plan, extracted so `MaxUploadBytes`/`MaxUploadFiles` enforcement lives in exactly one place.
 
 ## Polling / Refresh
 
@@ -33,7 +33,7 @@ Status updates are manual, not automatic. The batch page renders a status table 
 
 ## Data Flow
 
-**Upload:** browser submits a multipart form to `POST /ui/upload` → handler parses files → calls `uploadUC.Upload` (same use case the JSON API uses) → on success, 303-redirects to `GET /ui/batch/:batch_id`; on zero files or a use-case error, re-renders the upload form with an inline error, HTTP 200.
+**Upload:** browser submits a multipart form to `POST /ui/upload` → handler parses files → calls `uploadUC.Upload` (same use case the JSON API uses) → on success, 303-redirects to `GET /ui/batch/:batch_id`; on a parse failure (zero files, oversized body, too many files), re-renders the upload form with an inline error, HTTP 200; on a use-case error, renders the generic error page via the same `renderError` path as the batch and search full-page handlers.
 
 **Batch status:** `GET /ui/batch/:batch_id` and `GET /ui/batch/:batch_id/rows` both call `statusUC.GetBatchStatus` and render the same row data — the first as a full page, the second as just the table body fragment for the refresh button to swap in.
 

@@ -1,4 +1,3 @@
-// internal/adapter/driver/web/web.go
 package web
 
 import "github.com/gin-gonic/gin"
