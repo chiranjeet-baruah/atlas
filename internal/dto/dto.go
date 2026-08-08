@@ -1,6 +1,10 @@
 package dto
 
-import "resumesearch/internal/domain"
+import (
+	"time"
+
+	"resumesearch/internal/domain"
+)
 
 type ResumeRef struct {
 	ID       string `json:"id"`
@@ -28,6 +32,20 @@ type StatusResponse struct {
 type BatchStatusResponse struct {
 	BatchID string           `json:"batch_id"`
 	Resumes []StatusResponse `json:"resumes"`
+}
+
+// BatchSummary is one batch's aggregate status counts, for the processing
+// tab's batch list. CreatedAt stays a time.Time rather than a pre-formatted
+// string: this package is shared with the JSON API, and display formatting
+// belongs at the render layer, not baked into the transport type.
+type BatchSummary struct {
+	BatchID    string    `json:"batch_id"`
+	Total      int       `json:"total"`
+	Pending    int       `json:"pending"`
+	Processing int       `json:"processing"`
+	Done       int       `json:"done"`
+	Failed     int       `json:"failed"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type SearchRequest struct {
@@ -71,6 +89,30 @@ func FromResumes(resumes []domain.Resume) []StatusResponse {
 	out := make([]StatusResponse, 0, len(resumes))
 	for _, r := range resumes {
 		out = append(out, FromResume(r))
+	}
+	return out
+}
+
+func FromBatchSummary(b domain.BatchSummary) BatchSummary {
+	return BatchSummary{
+		BatchID:    b.BatchID,
+		Total:      b.Total,
+		Pending:    b.Pending,
+		Processing: b.Processing,
+		Done:       b.Done,
+		Failed:     b.Failed,
+		CreatedAt:  b.CreatedAt,
+	}
+}
+
+// FromBatchSummaries always returns a non-nil (possibly empty) slice so the
+// JSON response serializes "batches":[] rather than "batches":null, and so
+// the web view's {{range .Batches}} "No batches yet" fallback works on a
+// nil-safe value.
+func FromBatchSummaries(summaries []domain.BatchSummary) []BatchSummary {
+	out := make([]BatchSummary, 0, len(summaries))
+	for _, b := range summaries {
+		out = append(out, FromBatchSummary(b))
 	}
 	return out
 }

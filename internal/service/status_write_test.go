@@ -39,6 +39,9 @@ func (r *statusOnlyRepo) GetByID(ctx context.Context, id string) (domain.Resume,
 func (r *statusOnlyRepo) GetByBatchID(ctx context.Context, batchID string) ([]domain.Resume, error) {
 	return nil, nil
 }
+func (r *statusOnlyRepo) ListBatches(ctx context.Context) ([]domain.BatchSummary, error) {
+	return nil, nil
+}
 func (r *statusOnlyRepo) Search(ctx context.Context, queryVec []float32, filters domain.SearchFilters, limit int) ([]domain.SearchResult, error) {
 	return nil, nil
 }

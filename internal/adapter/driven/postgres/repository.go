@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 
+	"resumesearch/internal/constants"
 	"resumesearch/internal/domain"
 )
 
@@ -141,6 +142,45 @@ func (r *Repository) GetByBatchID(ctx context.Context, batchID string) ([]domain
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate batch %s: %w", batchID, err)
+	}
+	return out, nil
+}
+
+// ListBatches aggregates resumes by batch_id off the existing
+// idx_resumes_batch index — no separate batches table exists, so this is a
+// GROUP BY over resumes rather than a lookup. Ordered newest-first and
+// capped at constants.ProcessingBatchListLimit, the single source of truth
+// for the cap (also echoed into the web view so the template can render
+// "showing newest N" without hardcoding the number).
+func (r *Repository) ListBatches(ctx context.Context) ([]domain.BatchSummary, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT batch_id,
+		       COUNT(*) AS total,
+		       COUNT(*) FILTER (WHERE status = 'PENDING')    AS pending,
+		       COUNT(*) FILTER (WHERE status = 'PROCESSING') AS processing,
+		       COUNT(*) FILTER (WHERE status = 'DONE')       AS done,
+		       COUNT(*) FILTER (WHERE status = 'FAILED')     AS failed,
+		       MIN(created_at) AS created_at
+		FROM resumes
+		GROUP BY batch_id
+		ORDER BY MIN(created_at) DESC
+		LIMIT $1
+	`, constants.ProcessingBatchListLimit)
+	if err != nil {
+		return nil, fmt.Errorf("list batches: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]domain.BatchSummary, 0)
+	for rows.Next() {
+		var s domain.BatchSummary
+		if err := rows.Scan(&s.BatchID, &s.Total, &s.Pending, &s.Processing, &s.Done, &s.Failed, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan batch summary: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate batches: %w", err)
 	}
 	return out, nil
 }

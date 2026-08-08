@@ -1,0 +1,33 @@
+{{define "processing_page"}}
+<!doctype html>
+<html><head><title>Processing</title><link rel="stylesheet" href="/ui/static/style.css"><script src="/ui/static/htmx.min.js"></script></head>
+<body>
+<nav><a href="/ui/upload">Upload</a><a href="/ui/processing">Processing</a><a href="/ui/search">Search</a></nav>
+<h1>Processing</h1>
+{{if .LookupError}}<p class="error">{{.LookupError}}</p>{{end}}
+<form method="get" action="/ui/processing/lookup">
+  <label>Jump to batch ID <input type="text" name="batch_id" required></label>
+  <button type="submit">Go</button>
+</form>
+<button hx-get="/ui/processing/rows" hx-target="#batches" hx-swap="outerHTML">Refresh</button>
+{{template "processing_rows" .}}
+</body></html>
+{{end}}
+
+{{define "processing_rows"}}
+<table id="batches">
+<thead><tr><th>Batch ID</th><th>Created</th><th>Total</th><th>Pending</th><th>Processing</th><th>Done</th><th>Failed</th></tr></thead>
+<tbody>
+{{if .Error}}
+<tr><td colspan="7">{{.Error}} (ref: {{.ErrorSlug}})</td></tr>
+{{else}}
+{{range .Batches}}
+<tr><td><a href="/ui/batch/{{.BatchID}}">{{.BatchID}}</a></td><td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td><td>{{.Total}}</td><td>{{.Pending}}</td><td>{{.Processing}}</td><td>{{.Done}}</td><td>{{.Failed}}</td></tr>
+{{else}}
+<tr><td colspan="7">No batches yet.</td></tr>
+{{end}}
+{{if .Truncated}}<tr><td colspan="7">Showing newest {{.Limit}} batches.</td></tr>{{end}}
+{{end}}
+</tbody>
+</table>
+{{end}}

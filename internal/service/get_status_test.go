@@ -143,3 +143,65 @@ func TestGetStatus_ByBatchID(t *testing.T) {
 		})
 	}
 }
+
+func TestGetStatus_ListBatches(t *testing.T) {
+	cases := []struct {
+		name      string
+		repo      *fakeRepo
+		wantErr   bool
+		wantCount int
+		wantFirst string // BatchID of the first returned summary, checked when wantCount > 0
+	}{
+		{
+			name: "no batches yet returns an empty slice, not an error",
+			repo: &fakeRepo{ListBatchesFn: func(ctx context.Context) ([]domain.BatchSummary, error) {
+				return nil, nil
+			}},
+			wantCount: 0,
+		},
+		{
+			name: "multiple batches map through in the order the repo returned them",
+			repo: &fakeRepo{ListBatchesFn: func(ctx context.Context) ([]domain.BatchSummary, error) {
+				return []domain.BatchSummary{
+					{BatchID: "batch-2", Total: 3, Done: 1, Failed: 2},
+					{BatchID: "batch-1", Total: 5, Pending: 5},
+				}, nil
+			}},
+			wantCount: 2,
+			wantFirst: "batch-2",
+		},
+		{
+			name: "repository failure propagates",
+			repo: &fakeRepo{ListBatchesFn: func(ctx context.Context) ([]domain.BatchSummary, error) {
+				return nil, errors.New("db unreachable")
+			}},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uc := service.NewGetStatusUseCase(tc.repo)
+			got, err := uc.ListBatches(context.Background())
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ListBatches failed: %v", err)
+			}
+			if got == nil {
+				t.Error("expected non-nil slice")
+			}
+			if len(got) != tc.wantCount {
+				t.Fatalf("got %d batches, want %d", len(got), tc.wantCount)
+			}
+			if tc.wantCount > 0 && got[0].BatchID != tc.wantFirst {
+				t.Errorf("got first BatchID %q, want %q", got[0].BatchID, tc.wantFirst)
+			}
+		})
+	}
+}

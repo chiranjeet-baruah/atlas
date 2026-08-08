@@ -175,4 +175,9 @@ const (
 	// cost of time; 200 produced clean, accurate OCR text against a real
 	// scanned resume in the design spike — see decisions.md.
 	OCRRasterDPI = 200
+
+	// ProcessingBatchListLimit caps how many batches the processing tab's
+	// batch list query returns (newest first), so the page stays fast as
+	// the resumes table grows without needing pagination.
+	ProcessingBatchListLimit = 100
 )

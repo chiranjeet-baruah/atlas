@@ -18,10 +18,11 @@ func TestNew_RegistersAllRoutes(t *testing.T) {
 
 	upload := &stubUploadRunner{resp: dto.UploadBatchResponse{BatchID: "batch-1"}}
 	status := &stubBatchStatusRunner{resp: dto.BatchStatusResponse{BatchID: "batch-1"}}
+	list := &stubBatchListRunner{summaries: []dto.BatchSummary{{BatchID: validBatchID}}}
 	search := &stubSearchRunner{}
 
 	router := gin.New()
-	web.New(router, upload, status, search)
+	web.New(router, upload, status, list, search)
 
 	cases := []struct {
 		name       string
@@ -35,6 +36,12 @@ func TestNew_RegistersAllRoutes(t *testing.T) {
 		{name: "GET search form", method: "GET", path: "/ui/search", wantStatus: http.StatusOK},
 		{name: "GET batch page", method: "GET", path: "/ui/batch/batch-1", wantStatus: http.StatusOK},
 		{name: "GET batch rows", method: "GET", path: "/ui/batch/batch-1/rows", wantStatus: http.StatusOK},
+		{name: "GET processing page", method: "GET", path: "/ui/processing", wantStatus: http.StatusOK},
+		{name: "GET processing rows", method: "GET", path: "/ui/processing/rows", wantStatus: http.StatusOK},
+		{
+			name: "GET processing lookup with a valid batch_id redirects", method: "GET",
+			path: "/ui/processing/lookup?batch_id=" + validBatchID, wantStatus: http.StatusSeeOther,
+		},
 		{
 			name: "POST upload with no files re-renders form", method: "POST", path: "/ui/upload",
 			wantStatus: http.StatusOK,

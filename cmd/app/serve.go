@@ -54,7 +54,7 @@ func serveCmd() *cobra.Command {
 			router.GET("/resumes/:id", httpdriver.NewStatusHandler(statusUC))
 			router.GET("/resumes/batch/:batch_id", httpdriver.NewBatchStatusHandler(statusUC))
 			router.POST("/search", httpdriver.NewSearchHandler(searchUC))
-			webdriver.New(router, uploadUC, statusUC, searchUC)
+			webdriver.New(router, uploadUC, statusUC, statusUC, searchUC)
 
 			port := os.Getenv("HTTP_PORT")
 			if port == "" {
