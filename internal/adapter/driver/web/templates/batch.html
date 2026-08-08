@@ -1,0 +1,27 @@
+{{define "batch_page"}}
+<!doctype html>
+<html><head><title>Batch {{.BatchID}}</title><link rel="stylesheet" href="/ui/static/style.css"><script src="/ui/static/htmx.min.js"></script></head>
+<body>
+<nav><a href="/ui/upload">Upload</a><a href="/ui/processing">Processing</a><a href="/ui/search">Search</a></nav>
+<h1>Batch {{.BatchID}}</h1>
+<button hx-get="/ui/batch/{{.BatchID}}/rows" hx-target="#rows" hx-swap="outerHTML">Refresh</button>
+{{template "batch_rows" .}}
+</body></html>
+{{end}}
+
+{{define "batch_rows"}}
+<table id="rows">
+<thead><tr><th>Filename</th><th>Status</th><th>Stage</th><th>Error</th></tr></thead>
+<tbody>
+{{if .Error}}
+<tr><td colspan="4">{{.Error}} (ref: {{.ErrorSlug}})</td></tr>
+{{else}}
+{{range .Resumes}}
+<tr><td>{{.Filename}}</td><td>{{.Status}}</td><td>{{.Stage}}</td><td>{{.ErrorMessage}}</td></tr>
+{{else}}
+<tr><td colspan="4">No resumes in this batch.</td></tr>
+{{end}}
+{{end}}
+</tbody>
+</table>
+{{end}}

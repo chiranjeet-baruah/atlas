@@ -32,6 +32,13 @@ type ResumeRepository interface {
 	SaveChunks(ctx context.Context, resumeID string, chunks []domain.Chunk) error
 	GetByID(ctx context.Context, id string) (domain.Resume, error)
 	GetByBatchID(ctx context.Context, batchID string) ([]domain.Resume, error)
+
+	// ListBatches returns every batch's aggregate status counts, newest
+	// first, capped at constants.ProcessingBatchListLimit. Unlike
+	// GetByBatchID, an empty result is not an error: it means no batches
+	// exist yet, not that one specific ID was never created.
+	ListBatches(ctx context.Context) ([]domain.BatchSummary, error)
+
 	Search(ctx context.Context, queryVec []float32, filters domain.SearchFilters, limit int) ([]domain.SearchResult, error)
 
 	// ClaimStaleForRedrive atomically claims up to limit resumes that have

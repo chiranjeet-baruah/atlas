@@ -42,3 +42,14 @@ func (uc *GetStatusUseCase) ByBatchID(ctx context.Context, batchID string) (dto.
 	}
 	return dto.BatchStatusResponse{BatchID: batchID, Resumes: dto.FromResumes(resumes)}, nil
 }
+
+// ListBatches returns every batch's aggregate status counts. Unlike
+// ByBatchID, an empty result is not domain.ErrNotFound: zero batches means
+// none have been created yet, not that a specific requested ID is missing.
+func (uc *GetStatusUseCase) ListBatches(ctx context.Context) ([]dto.BatchSummary, error) {
+	summaries, err := uc.repo.ListBatches(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list batches: %w", err)
+	}
+	return dto.FromBatchSummaries(summaries), nil
+}

@@ -20,6 +20,7 @@ type fakeRepo struct {
 	SaveChunksFn           func(ctx context.Context, resumeID string, chunks []domain.Chunk) error
 	GetByIDFn              func(ctx context.Context, id string) (domain.Resume, error)
 	GetByBatchIDFn         func(ctx context.Context, batchID string) ([]domain.Resume, error)
+	ListBatchesFn          func(ctx context.Context) ([]domain.BatchSummary, error)
 	SearchFn               func(ctx context.Context, queryVec []float32, filters domain.SearchFilters, limit int) ([]domain.SearchResult, error)
 	ClaimStaleForRedriveFn func(ctx context.Context, staleAfter time.Duration, maxRedrives, limit int) ([]domain.Resume, error)
 
@@ -93,6 +94,13 @@ func (f *fakeRepo) GetByID(ctx context.Context, id string) (domain.Resume, error
 func (f *fakeRepo) GetByBatchID(ctx context.Context, batchID string) ([]domain.Resume, error) {
 	if f.GetByBatchIDFn != nil {
 		return f.GetByBatchIDFn(ctx, batchID)
+	}
+	return nil, nil
+}
+
+func (f *fakeRepo) ListBatches(ctx context.Context) ([]domain.BatchSummary, error) {
+	if f.ListBatchesFn != nil {
+		return f.ListBatchesFn(ctx)
 	}
 	return nil, nil
 }

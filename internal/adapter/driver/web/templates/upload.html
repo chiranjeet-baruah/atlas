@@ -1,0 +1,15 @@
+{{define "upload_page"}}
+<!doctype html>
+<html><head><title>Upload resumes</title><link rel="stylesheet" href="/ui/static/style.css"></head>
+<body>
+<nav><a href="/ui/upload">Upload</a><a href="/ui/processing">Processing</a><a href="/ui/search">Search</a></nav>
+<h1>Upload resumes</h1>
+{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
+<form method="post" action="/ui/upload" enctype="multipart/form-data">
+  <label>PDF files
+    <input type="file" name="files" multiple accept="application/pdf" required>
+  </label>
+  <button type="submit">Upload</button>
+</form>
+</body></html>
+{{end}}

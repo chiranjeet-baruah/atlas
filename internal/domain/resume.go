@@ -82,3 +82,17 @@ type SearchResult struct {
 	Resume       Resume
 	BestDistance float32
 }
+
+// BatchSummary aggregates one batch's resumes by status, for the
+// processing tab's batch list. CreatedAt is the earliest resume's
+// created_at in the batch, since every resume in a batch is inserted at
+// upload time and the batch itself has no separate row.
+type BatchSummary struct {
+	BatchID    string
+	Total      int
+	Pending    int
+	Processing int
+	Done       int
+	Failed     int
+	CreatedAt  time.Time
+}

@@ -418,3 +418,71 @@ func TestSearch_FiltersAndRanksByBestChunk(t *testing.T) {
 		})
 	}
 }
+
+func TestListBatches_AggregatesPerStatusCountsNewestFirst(t *testing.T) {
+	pool := setupTestDB(t)
+	repo := postgres.NewRepository(pool)
+	ctx := context.Background()
+
+	const batchOlder = "44444444-4444-4444-4444-444444444444"
+	const batchNewer = "55555555-5555-5555-5555-555555555555"
+
+	createBatch := func(batchID string, statuses ...domain.Status) {
+		t.Helper()
+		for _, status := range statuses {
+			r := &domain.Resume{
+				BatchID: batchID, Filename: "r.pdf", FilePath: "/r.pdf", Status: status,
+			}
+			if err := repo.CreateResume(ctx, r); err != nil {
+				t.Fatalf("CreateResume failed: %v", err)
+			}
+		}
+	}
+
+	createBatch(batchOlder, domain.StatusDone, domain.StatusFailed)
+	// Sleep so the two batches get distinct created_at values — the
+	// aggregation's ORDER BY MIN(created_at) DESC depends on it, and
+	// Postgres's now() has enough resolution to separate them across a
+	// real network round trip, but not guaranteed within the same tick.
+	time.Sleep(10 * time.Millisecond)
+	createBatch(batchNewer, domain.StatusPending, domain.StatusPending, domain.StatusProcessing)
+
+	got, err := repo.ListBatches(ctx)
+	if err != nil {
+		t.Fatalf("ListBatches failed: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 batches, got %d: %+v", len(got), got)
+	}
+
+	newer, older := got[0], got[1]
+	if newer.BatchID != batchNewer {
+		t.Errorf("expected newest batch %s first, got %s", batchNewer, newer.BatchID)
+	}
+	if newer.Total != 3 || newer.Pending != 2 || newer.Processing != 1 || newer.Done != 0 || newer.Failed != 0 {
+		t.Errorf("unexpected newer batch counts: %+v", newer)
+	}
+	if older.BatchID != batchOlder {
+		t.Errorf("expected older batch %s second, got %s", batchOlder, older.BatchID)
+	}
+	if older.Total != 2 || older.Done != 1 || older.Failed != 1 || older.Pending != 0 || older.Processing != 0 {
+		t.Errorf("unexpected older batch counts: %+v", older)
+	}
+}
+
+func TestListBatches_NoBatchesReturnsEmptySlice(t *testing.T) {
+	pool := setupTestDB(t)
+	repo := postgres.NewRepository(pool)
+	ctx := context.Background()
+
+	got, err := repo.ListBatches(ctx)
+	if err != nil {
+		t.Fatalf("ListBatches failed: %v", err)
+	}
+	if got == nil {
+		t.Error("expected non-nil empty slice")
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected 0 batches, got %d: %+v", len(got), got)
+	}
+}
