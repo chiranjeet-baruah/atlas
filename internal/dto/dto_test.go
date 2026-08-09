@@ -50,27 +50,38 @@ func TestFromResumes_EmptyInputSerializesAsEmptyArrayNotNull(t *testing.T) {
 }
 
 func TestFromSearchResult(t *testing.T) {
-	sr := domain.SearchResult{
-		Resume: domain.Resume{
-			ID:              "abc-123",
-			Filename:        "jane.pdf",
-			Skills:          []string{"go", "postgres"},
-			YearsExperience: 5,
-			Location:        "Remote",
-		},
-		BestDistance: 0.12,
+	cases := []struct {
+		name         string
+		bestDistance float32
+		wantMatchPct int
+	}{
+		{name: "close match rounds to a high percentage", bestDistance: 0.12, wantMatchPct: 88},
+		{name: "identical vectors (distance 0) is a perfect 100% match", bestDistance: 0, wantMatchPct: 100},
+		{name: "orthogonal vectors (distance 1) is a 0% match", bestDistance: 1, wantMatchPct: 0},
+		{name: "distance beyond 1 clamps to 0%, not negative", bestDistance: 1.5, wantMatchPct: 0},
+		{name: "max possible cosine distance (2) clamps to 0%", bestDistance: 2, wantMatchPct: 0},
 	}
-	got := dto.FromSearchResult(sr)
-	want := dto.SearchResultDTO{
-		ID:              "abc-123",
-		Filename:        "jane.pdf",
-		Skills:          []string{"go", "postgres"},
-		YearsExperience: 5,
-		Location:        "Remote",
-		Distance:        0.12,
-	}
-	if got.ID != want.ID || got.Distance != want.Distance || len(got.Skills) != len(want.Skills) {
-		t.Errorf("unexpected SearchResultDTO: %+v", got)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sr := domain.SearchResult{
+				Resume: domain.Resume{
+					ID:              "abc-123",
+					Filename:        "jane.pdf",
+					Skills:          []string{"go", "postgres"},
+					YearsExperience: 5,
+					Location:        "Remote",
+				},
+				BestDistance: tc.bestDistance,
+			}
+			got := dto.FromSearchResult(sr)
+			if got.ID != sr.Resume.ID || len(got.Skills) != len(sr.Resume.Skills) {
+				t.Errorf("unexpected passthrough fields: %+v", got)
+			}
+			if got.MatchPercentage != tc.wantMatchPct {
+				t.Errorf("MatchPercentage = %d, want %d", got.MatchPercentage, tc.wantMatchPct)
+			}
+		})
 	}
 }
 

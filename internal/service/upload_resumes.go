@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -31,10 +32,11 @@ func NewUploadResumesUseCase(repo ResumeRepository, publisher EventPublisher, st
 // PENDING resume row for it, and publishes an ingest event so the worker
 // picks it up asynchronously.
 //
-// Every filename is validated before anything touches disk/DB/Kafka, so an
-// invalid filename anywhere in the batch rejects the whole batch atomically
-// instead of leaving earlier files in the same request already committed
-// with no way for the caller to find them. If a later, non-validation
+// Every file is validated (path-safe filename, .pdf extension) before
+// anything touches disk/DB/Kafka, so an invalid file anywhere in the batch
+// rejects the whole batch atomically instead of leaving earlier files in
+// the same request already committed with no way for the caller to find
+// them. If a later, non-validation
 // failure still occurs mid-batch (e.g. the database or Kafka becomes
 // unreachable partway through), Run returns the partial response describing
 // what did succeed alongside the error, rather than discarding it — the
@@ -45,6 +47,9 @@ func (uc *UploadResumesUseCase) Run(ctx context.Context, files []UploadFile) (dt
 		safeName, err := sanitizeFilename(f.Filename)
 		if err != nil {
 			return dto.UploadBatchResponse{}, fmt.Errorf("invalid filename %q: %w", f.Filename, err)
+		}
+		if !strings.EqualFold(filepath.Ext(safeName), ".pdf") {
+			return dto.UploadBatchResponse{}, fmt.Errorf("invalid filename %q: only .pdf files are supported", f.Filename)
 		}
 		safeNames[i] = safeName
 	}

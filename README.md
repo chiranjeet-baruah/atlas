@@ -10,7 +10,7 @@ Hexagonal (ports & adapters): `domain` (framework-free entities) → `service` (
 
 ### Ingestion flow
 
-Each resume moves through 3 independent Kafka topics/consumer groups — extract, classify, embed — so a slow LLM call can't block extraction or embedding for other resumes on the same stage. A `stage` column tracks which one a resume is currently on; `GET /resumes/:id` exposes it directly. A periodic redrive sweeper reclaims any resume that hasn't advanced in a while (crashed mid-stage, before its next publish) and republishes it to the right topic, up to a bounded number of retries before giving up and marking it `FAILED`.
+Each resume moves through 3 independent Kafka topics/consumer groups — extract, classify, embed — so a slow LLM call can't block extraction or embedding for other resumes on the same stage. A `stage` column tracks which one a resume is currently on; `GET /resumes/:id` exposes it directly, and `GET /resumes/:id/file` serves the original uploaded file back, rendered inline in the browser. A periodic redrive sweeper reclaims any resume that hasn't advanced in a while (crashed mid-stage, before its next publish) and republishes it to the right topic, up to a bounded number of retries before giving up and marking it `FAILED`.
 
 ```mermaid
 flowchart LR
@@ -66,15 +66,20 @@ curl http://localhost:8080/resumes/batch/<batch_id>
 curl -X POST http://localhost:8080/search \
   -H "Content-Type: application/json" \
   -d '{"query": "backend engineer with distributed systems experience", "required_skills": ["go", "kafka"], "min_years": 3}'
+
+curl -OJ http://localhost:8080/resumes/<resume_id>/file
+# downloads the original PDF; opening the same URL in a browser renders it inline
 ```
 
 `data/resumes/` ships 12 short, clearly-fake sample resumes with varied skills, years of experience, and locations so the search filters have something real to differentiate.
+
+Only `.pdf` uploads are accepted — a non-PDF file anywhere in a batch rejects the whole batch before anything is written to disk or Postgres.
 
 ## Web UI
 
 After `docker compose up --build`, open `http://localhost:8080/ui/upload` in a browser.
 
-A minimal server-rendered UI lives alongside the JSON API on the same port: `/ui/upload` (multipart upload form), `/ui/batch/<id>` (status table with a manual Refresh button — no auto-polling), `/ui/processing` (every batch's aggregate status counts, newest first, plus a jump-to-batch-ID form), and `/ui/search` (the same search filters as `POST /search`, rendered as a table). It's a thin HTML-rendering layer in front of the same use cases the JSON API calls — no separate business logic; `/ui/processing` has no JSON API counterpart, since nothing outside the browser UI needs the batch list.
+A minimal server-rendered UI lives alongside the JSON API on the same port: `/ui/upload` (multipart upload form), `/ui/batch/<id>` (status table with a manual Refresh button — no auto-polling), `/ui/processing` (every batch's aggregate status counts, newest first, plus a jump-to-batch-ID form), and `/ui/search` (the same search filters as `POST /search`, rendered as a table, with a "View" link per result that opens the actual PDF in a new tab). It's a thin HTML-rendering layer in front of the same use cases the JSON API calls — no separate business logic; `/ui/processing` has no JSON API counterpart, since nothing outside the browser UI needs the batch list.
 
 A use-case failure never shows its raw internal error in the browser: the page renders a generic message plus a short slug (e.g. `internal-error`), while the real error goes to the server logs. The JSON API is unchanged and still returns the raw error in its response — see `decisions.md` for why.
 

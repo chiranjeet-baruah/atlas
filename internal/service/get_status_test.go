@@ -68,6 +68,64 @@ func TestGetStatus_ByID(t *testing.T) {
 	}
 }
 
+func TestGetStatus_FileByID(t *testing.T) {
+	cases := []struct {
+		name    string
+		repo    *fakeRepo
+		id      string
+		wantErr error // checked with errors.Is; nil means "no error expected"
+		want    struct{ filename, filePath string }
+	}{
+		{
+			name: "resume returns its filename and on-disk path",
+			repo: &fakeRepo{GetByIDFn: func(ctx context.Context, id string) (domain.Resume, error) {
+				return domain.Resume{ID: "r1", Filename: "a.pdf", FilePath: "/data/resumes/batch-1/0_a.pdf"}, nil
+			}},
+			id:   "r1",
+			want: struct{ filename, filePath string }{"a.pdf", "/data/resumes/batch-1/0_a.pdf"},
+		},
+		{
+			name: "missing resume propagates domain.ErrNotFound",
+			repo: &fakeRepo{GetByIDFn: func(ctx context.Context, id string) (domain.Resume, error) {
+				return domain.Resume{}, domain.ErrNotFound
+			}},
+			id:      "missing",
+			wantErr: domain.ErrNotFound,
+		},
+		{
+			name: "repository failure propagates as a distinct, non-ErrNotFound error",
+			repo: &fakeRepo{GetByIDFn: func(ctx context.Context, id string) (domain.Resume, error) {
+				return domain.Resume{}, errors.New("db unreachable")
+			}},
+			id:      "r1",
+			wantErr: errors.New("db unreachable"), // sentinel: any non-nil, non-ErrNotFound error
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uc := service.NewGetStatusUseCase(tc.repo)
+			got, err := uc.FileByID(context.Background(), tc.id)
+
+			if tc.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if errors.Is(tc.wantErr, domain.ErrNotFound) != errors.Is(err, domain.ErrNotFound) {
+					t.Errorf("errors.Is(err, ErrNotFound) = %v, want %v", errors.Is(err, domain.ErrNotFound), errors.Is(tc.wantErr, domain.ErrNotFound))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("FileByID failed: %v", err)
+			}
+			if got.Filename != tc.want.filename || got.FilePath != tc.want.filePath {
+				t.Errorf("got %+v, want filename=%s filePath=%s", got, tc.want.filename, tc.want.filePath)
+			}
+		})
+	}
+}
+
 func TestGetStatus_ByBatchID(t *testing.T) {
 	cases := []struct {
 		name            string

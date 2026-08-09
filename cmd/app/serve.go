@@ -52,6 +52,7 @@ func serveCmd() *cobra.Command {
 			router := gin.Default()
 			router.POST("/resumes/batch", httpdriver.NewUploadHandler(uploadUC))
 			router.GET("/resumes/:id", httpdriver.NewStatusHandler(statusUC))
+			router.GET("/resumes/:id/file", httpdriver.NewResumeFileHandler(statusUC))
 			router.GET("/resumes/batch/:batch_id", httpdriver.NewBatchStatusHandler(statusUC))
 			router.POST("/search", httpdriver.NewSearchHandler(searchUC))
 			webdriver.New(router, uploadUC, statusUC, statusUC, searchUC)
