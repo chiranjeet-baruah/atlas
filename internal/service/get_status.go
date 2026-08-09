@@ -27,6 +27,17 @@ func (uc *GetStatusUseCase) ByID(ctx context.Context, id string) (dto.StatusResp
 	return dto.FromResume(resume), nil
 }
 
+// FileByID returns the on-disk path and original filename for a resume's
+// uploaded file, so an HTTP handler can stream the bytes back. Same
+// domain.ErrNotFound-preserving contract as ByID.
+func (uc *GetStatusUseCase) FileByID(ctx context.Context, id string) (dto.ResumeFileInfo, error) {
+	resume, err := uc.repo.GetByID(ctx, id)
+	if err != nil {
+		return dto.ResumeFileInfo{}, fmt.Errorf("get resume %s: %w", id, err)
+	}
+	return dto.FromResumeFile(resume), nil
+}
+
 // ByBatchID treats a batch with no resumes as domain.ErrNotFound, not an
 // empty result: every batch is created by UploadResumes with at least one
 // file, so zero rows means this batch ID was never created, matching ByID's

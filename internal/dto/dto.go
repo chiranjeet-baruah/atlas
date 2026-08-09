@@ -1,6 +1,7 @@
 package dto
 
 import (
+	"math"
 	"time"
 
 	"resumesearch/internal/domain"
@@ -27,6 +28,15 @@ type StatusResponse struct {
 	// bookkeeping, not something a client needs.
 	Stage        string `json:"stage"`
 	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+// ResumeFileInfo is the minimal data a file-serving handler needs — the
+// on-disk path to stream, plus the original filename for the extension
+// check and download name. Deliberately not a JSON-facing DTO: it's never
+// serialized, only passed from the use case to the handler.
+type ResumeFileInfo struct {
+	Filename string
+	FilePath string
 }
 
 type BatchStatusResponse struct {
@@ -61,12 +71,15 @@ type SearchResultDTO struct {
 	Skills          []string `json:"skills"`
 	YearsExperience float64  `json:"years_experience"`
 	Location        string   `json:"location"`
-	// Distance is a vector distance, not a similarity score: lower means a
-	// closer match. Results are already sorted best-first server-side
-	// (repository.go's Search, ORDER BY best_distance ASC) — a client
-	// re-sorting this field descending, as the name "score" would invite,
-	// would invert the ranking.
-	Distance float32 `json:"distance"`
+	// MatchPercentage is 0-100, higher means a better match. Derived from
+	// pgvector cosine distance (repository.go's Search, best_distance = 1 -
+	// cosine similarity) via matchPercentage below. Unlike raw distance,
+	// higher-is-better here actually matches the name, so — unlike the old
+	// "distance" field — this one is safe to think of the way its name
+	// suggests. Results are still sorted best-first server-side (ORDER BY
+	// best_distance ASC, which is also highest-percentage-first); a client
+	// never needs to re-sort this.
+	MatchPercentage int `json:"match_percentage"`
 }
 
 type SearchResponse struct {
@@ -91,6 +104,13 @@ func FromResumes(resumes []domain.Resume) []StatusResponse {
 		out = append(out, FromResume(r))
 	}
 	return out
+}
+
+func FromResumeFile(r domain.Resume) ResumeFileInfo {
+	return ResumeFileInfo{
+		Filename: r.Filename,
+		FilePath: r.FilePath,
+	}
 }
 
 func FromBatchSummary(b domain.BatchSummary) BatchSummary {
@@ -124,7 +144,25 @@ func FromSearchResult(sr domain.SearchResult) SearchResultDTO {
 		Skills:          sr.Resume.Skills,
 		YearsExperience: sr.Resume.YearsExperience,
 		Location:        sr.Resume.Location,
-		Distance:        sr.BestDistance,
+		MatchPercentage: matchPercentage(sr.BestDistance),
+	}
+}
+
+// matchPercentage converts a pgvector cosine distance (1 - cosine
+// similarity) into a 0-100 value where higher is a better match. Clamped at
+// both ends: cosine distance ranges [0, 2] (2 meaning perfectly opposite
+// vectors), which maps to [-100, 100] before clamping — a percentage has no
+// meaningful negative value to show a user, and 100 is already the
+// best-possible match.
+func matchPercentage(distance float32) int {
+	pct := int(math.Round((1 - float64(distance)) * 100))
+	switch {
+	case pct < 0:
+		return 0
+	case pct > 100:
+		return 100
+	default:
+		return pct
 	}
 }
 

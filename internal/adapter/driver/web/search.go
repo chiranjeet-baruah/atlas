@@ -35,10 +35,11 @@ func NewSearchPageHandler() gin.HandlerFunc {
 }
 
 // NewSearchSubmitHandler validates the form, calls uc.Run, and renders the
-// results fragment in the exact order the use case returns it. Distance is
-// a vector distance (lower = closer), already sorted best-first
-// server-side (see internal/dto/dto.go's SearchResultDTO.Distance comment)
-// — this handler must never re-sort it or label it "score".
+// results fragment in the exact order the use case returns it: already
+// sorted best-first server-side, and — unlike the raw cosine distance it's
+// derived from — MatchPercentage's higher-is-better ordering agrees with
+// that sort, so this handler has no reordering to get wrong (see
+// internal/dto/dto.go's SearchResultDTO.MatchPercentage comment).
 func NewSearchSubmitHandler(uc searchRunner) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		query := strings.TrimSpace(c.PostForm("query"))

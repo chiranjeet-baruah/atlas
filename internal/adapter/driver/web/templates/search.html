@@ -21,12 +21,12 @@
 <p class="error">{{.Error}}{{if .ErrorSlug}} (ref: {{.ErrorSlug}}){{end}}</p>
 {{else}}
 <table>
-<thead><tr><th>Filename</th><th>Skills</th><th>Years</th><th>Location</th><th>distance (lower = closer)</th></tr></thead>
+<thead><tr><th>Filename</th><th>Skills</th><th>Years</th><th>Location</th><th>Match %</th><th>Resume</th></tr></thead>
 <tbody>
 {{range .Results}}
-<tr><td>{{.Filename}}</td><td>{{range .Skills}}{{.}} {{end}}</td><td>{{.YearsExperience}}</td><td>{{.Location}}</td><td>{{.Distance}}</td></tr>
+<tr><td>{{.Filename}}</td><td>{{range .Skills}}{{.}} {{end}}</td><td>{{.YearsExperience}}</td><td>{{.Location}}</td><td>{{.MatchPercentage}}%</td><td><a href="/resumes/{{.ID}}/file" target="_blank">View</a></td></tr>
 {{else}}
-<tr><td colspan="5">No matches.</td></tr>
+<tr><td colspan="6">No matches.</td></tr>
 {{end}}
 </tbody>
 </table>

@@ -36,14 +36,21 @@ func TestUploadResumes_Run(t *testing.T) {
 		},
 		{
 			name:          "path traversal filename is stripped down to its base name, not rejected outright",
-			files:         []service.UploadFile{{Filename: "../../etc/passwd", Content: []byte("x")}},
+			files:         []service.UploadFile{{Filename: "../../etc/resume.pdf", Content: []byte("x")}},
 			repo:          &fakeRepo{CreateResumeFn: assignSequentialID()},
 			pub:           &fakePublisher{},
-			wantFilenames: []string{"passwd"},
+			wantFilenames: []string{"resume.pdf"},
 		},
 		{
 			name:    "filename with no base component (\"..\") is rejected",
 			files:   []service.UploadFile{{Filename: "..", Content: []byte("x")}},
+			repo:    &fakeRepo{CreateResumeFn: assignSequentialID()},
+			pub:     &fakePublisher{},
+			wantErr: true,
+		},
+		{
+			name:    "non-pdf filename is rejected",
+			files:   []service.UploadFile{{Filename: "resume.docx", Content: []byte("x")}},
 			repo:    &fakeRepo{CreateResumeFn: assignSequentialID()},
 			pub:     &fakePublisher{},
 			wantErr: true,
@@ -178,6 +185,43 @@ func TestUploadResumes_Run_InvalidFilenameRejectsWholeBatchBeforeAnySideEffect(t
 	_, err := uc.Run(context.Background(), files)
 	if err == nil {
 		t.Fatal("expected error for invalid filename, got nil")
+	}
+	if len(repo.CreatedResumes) != 0 {
+		t.Errorf("expected no resume rows created before validating the whole batch, got %d", len(repo.CreatedResumes))
+	}
+	if len(pub.Published) != 0 {
+		t.Errorf("expected no Kafka events published before validating the whole batch, got %d", len(pub.Published))
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read storage dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected no batch directory written before validating the whole batch, got %v", entries)
+	}
+}
+
+// TestUploadResumes_Run_NonPDFRejectsWholeBatchBeforeAnySideEffect mirrors
+// TestUploadResumes_Run_InvalidFilenameRejectsWholeBatchBeforeAnySideEffect
+// for the .pdf-only restriction: a non-PDF file anywhere in the batch must
+// reject the whole batch atomically, the same way a path-traversal filename
+// does, rather than leaving earlier files in the same request already
+// written to disk/DB/Kafka.
+func TestUploadResumes_Run_NonPDFRejectsWholeBatchBeforeAnySideEffect(t *testing.T) {
+	repo := &fakeRepo{CreateResumeFn: assignSequentialID()}
+	pub := &fakePublisher{}
+	dir := t.TempDir()
+	uc := service.NewUploadResumesUseCase(repo, pub, dir)
+
+	files := []service.UploadFile{
+		{Filename: "good.pdf", Content: []byte("A")},
+		{Filename: "bad.docx", Content: []byte("B")}, // rejected: not a .pdf
+	}
+
+	_, err := uc.Run(context.Background(), files)
+	if err == nil {
+		t.Fatal("expected error for non-pdf filename, got nil")
 	}
 	if len(repo.CreatedResumes) != 0 {
 		t.Errorf("expected no resume rows created before validating the whole batch, got %d", len(repo.CreatedResumes))
