@@ -36,6 +36,17 @@ func workerCmd() *cobra.Command {
 
 			repo := postgres.NewRepository(pool)
 			model := modelclient.New(requireEnv("LLM_URL"), requireEnv("LLM_MODEL"), requireEnv("EMBED_URL"), requireEnv("EMBED_MODEL"))
+
+			// Fire-and-forget: WarmUp can take up to LLMAttemptTimeout +
+			// EmbedAttemptTimeout (135s) on a cold model, and startup must
+			// not block the consumers below for that long just to save the
+			// very first message a cold-start cost. runWarmUp's ticker
+			// covers the recurring case regardless of how this one turns out.
+			go func() {
+				if err := model.WarmUp(ctx); err != nil {
+					slog.WarnContext(ctx, "startup model warm-up failed, first resume request may pay a cold-start cost", "error", err)
+				}
+			}()
 			extractor := pdf.NewExtractor()
 			brokers := splitBrokers(requireEnv("KAFKA_BROKERS"))
 
@@ -79,6 +90,7 @@ func workerCmd() *cobra.Command {
 				func(ctx context.Context) error { return classifyConsumer.Consume(ctx, classifyUC.Run) },
 				func(ctx context.Context) error { return embedConsumer.Consume(ctx, embedUC.Run) },
 				func(ctx context.Context) error { return runSweeper(ctx, sweepUC) },
+				func(ctx context.Context) error { return runWarmUp(ctx, model) },
 			})
 		},
 	}
@@ -120,7 +132,31 @@ func runPipeline(ctx context.Context, fns []func(context.Context) error) error {
 // rather than treated as fatal — the whole point of periodic sweeping is
 // that a transient failure gets another chance shortly.
 func runSweeper(ctx context.Context, sweepUC *service.RedriveSweepUseCase) error {
-	ticker := time.NewTicker(constants.SweepInterval)
+	return runOnTicker(ctx, constants.SweepInterval, sweepUC.Run, func(err error) {
+		slog.ErrorContext(ctx, "redrive sweep failed", "error", err)
+	})
+}
+
+// runWarmUp re-warms model on a constants.WarmUpInterval ticker until ctx
+// is done, on top of the initial warm-up already fired at worker startup —
+// see constants.WarmUpInterval's doc comment for why this recurs rather
+// than running once. A single warm-up failing is logged and retried next
+// tick rather than treated as fatal — Extract's own retry loop remains the
+// correctness backstop if a real resume request still lands on a cold
+// model.
+func runWarmUp(ctx context.Context, model *modelclient.Client) error {
+	return runOnTicker(ctx, constants.WarmUpInterval, model.WarmUp, func(err error) {
+		slog.WarnContext(ctx, "periodic model warm-up failed", "error", err)
+	})
+}
+
+// runOnTicker calls run once per interval until ctx is done, passing each
+// failure to onErr rather than treating it as fatal — every periodic
+// background task in this worker (sweeping, warm-up) wants "log and try
+// again next tick," just with a different message/severity, so that
+// decision is the caller's via onErr rather than duplicated per task.
+func runOnTicker(ctx context.Context, interval time.Duration, run func(context.Context) error, onErr func(error)) error {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -128,8 +164,8 @@ func runSweeper(ctx context.Context, sweepUC *service.RedriveSweepUseCase) error
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := sweepUC.Run(ctx); err != nil {
-				slog.ErrorContext(ctx, "redrive sweep failed", "error", err)
+			if err := run(ctx); err != nil {
+				onErr(err)
 			}
 		}
 	}

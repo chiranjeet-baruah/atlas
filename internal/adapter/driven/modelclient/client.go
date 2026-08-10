@@ -174,6 +174,27 @@ func (c *Client) chatCompletion(ctx context.Context, prompt string) (string, err
 	return parsed.Choices[0].Message.Content, nil
 }
 
+// WarmUp issues one trivial call to each of the LLM and embedding
+// endpoints, forcing Docker Model Runner to load both models if they're
+// currently cold/evicted. It's a latency optimization only: Extract's own
+// retry loop remains the correctness backstop if a real resume request
+// still lands on a cold model, so callers should log a WarmUp error rather
+// than treat it as fatal.
+func (c *Client) WarmUp(ctx context.Context) error {
+	llmCtx, cancel := context.WithTimeout(ctx, constants.LLMAttemptTimeout)
+	defer cancel()
+	if _, err := c.chatCompletion(llmCtx, "Reply with the single word: ok"); err != nil {
+		return fmt.Errorf("warm up llm: %w", err)
+	}
+
+	embedCtx, cancel := context.WithTimeout(ctx, constants.EmbedAttemptTimeout)
+	defer cancel()
+	if _, err := c.Embed(embedCtx, "warmup"); err != nil {
+		return fmt.Errorf("warm up embed: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) Embed(ctx context.Context, text string) ([]float32, error) {
 	reqBody, err := json.Marshal(map[string]any{
 		"model": c.embedModel,
