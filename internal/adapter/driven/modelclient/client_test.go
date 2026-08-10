@@ -258,6 +258,82 @@ func TestExtract_CanceledContextStopsRetryingDuringBackoff(t *testing.T) {
 	}
 }
 
+// TestWarmUp covers both of WarmUp's calls (chat completion, embed) and,
+// via wantEmbedCalls, locks in that a failing LLM call short-circuits
+// before ever reaching the embed endpoint — WarmUp is meant to be a cheap,
+// ordered check of both dependencies, not two independent ones.
+func TestWarmUp(t *testing.T) {
+	cases := []struct {
+		name           string
+		chatStatus     int
+		embedStatus    int
+		wantErr        bool
+		wantEmbedCalls int
+	}{
+		{
+			name:           "both endpoints healthy succeeds",
+			chatStatus:     http.StatusOK,
+			embedStatus:    http.StatusOK,
+			wantEmbedCalls: 1,
+		},
+		{
+			name:           "llm endpoint failing is an error and short-circuits before embed",
+			chatStatus:     http.StatusInternalServerError,
+			embedStatus:    http.StatusOK,
+			wantErr:        true,
+			wantEmbedCalls: 0,
+		},
+		{
+			name:           "embed endpoint failing is an error",
+			chatStatus:     http.StatusOK,
+			embedStatus:    http.StatusInternalServerError,
+			wantErr:        true,
+			wantEmbedCalls: 1,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			embedCalls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				switch req.URL.Path {
+				case "/chat/completions":
+					if tc.chatStatus != http.StatusOK {
+						w.WriteHeader(tc.chatStatus)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
+					})
+				case "/embeddings":
+					embedCalls++
+					if tc.embedStatus != http.StatusOK {
+						w.WriteHeader(tc.embedStatus)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"data": []map[string]any{{"embedding": []float32{0.1}}},
+					})
+				}
+			}))
+			defer server.Close()
+
+			c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+			err := c.WarmUp(t.Context())
+
+			if tc.wantErr && err == nil {
+				t.Error("expected error, got nil")
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("WarmUp failed: %v", err)
+			}
+			if embedCalls != tc.wantEmbedCalls {
+				t.Errorf("got %d calls to /embeddings, want %d", embedCalls, tc.wantEmbedCalls)
+			}
+		})
+	}
+}
+
 func TestExtract_YearsExperienceFieldRoundTrips(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{

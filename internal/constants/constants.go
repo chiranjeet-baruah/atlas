@@ -43,17 +43,25 @@ const (
 	// needs longer.
 	StatusWriteTimeout = 5 * time.Second
 
-	// LLMAttemptTimeout bounds a single LLM extraction attempt. Measured,
-	// not guessed: three real calls to docker.io/ai/llama3.2 with a real
-	// (short) resume took 24.97s/1.53s/1.86s — the first call pays for
+	// LLMAttemptTimeout bounds a single LLM extraction attempt. The
+	// cold-start baseline was measured, not guessed: three real calls to
+	// docker.io/ai/llama3.2 with a real (short) resume took
+	// 24.97s/1.53s/1.86s on the dev machine — the first call pays for
 	// loading the model into Docker Model Runner, subsequent calls hit the
 	// warm model and finish in ~2s. The cold-start cost recurs whenever
-	// the model gets evicted for idleness or the worker restarts, so the
-	// budget is sized off that worst case, not the warm-path average: 60s
-	// leaves ~35s of margin over the observed cold start on a short
-	// resume. Re-measure if production resumes run substantially longer
-	// than that sample, or if the model is changed again.
-	LLMAttemptTimeout = 60 * time.Second
+	// the model gets evicted for idleness or the worker restarts.
+	//
+	// 120s (roughly double the ~25s dev-machine cold start) rather than
+	// the originally-measured 60s: production runs on a VPS with a
+	// materially weaker CPU and no GPU than the dev machine this baseline
+	// was measured on, and a live production failure (all 3 attempts
+	// hitting context deadline exceeded) confirmed 60s wasn't enough
+	// margin there. See WarmUpInterval below for the complementary fix —
+	// proactively keeping the model warm so this budget is rarely tested
+	// cold in the first place. Re-measure both if production resumes run
+	// substantially longer than the original sample, or if the model is
+	// changed again.
+	LLMAttemptTimeout = 120 * time.Second
 
 	// EmbedAttemptTimeout bounds a single chunk's Embed call within the
 	// embed stage. EmbedStageSlack is added on top of
@@ -148,6 +156,21 @@ const (
 	// mid-restart, or momentarily overloaded) fires immediately with zero
 	// delay.
 	ExtractionRetryBackoff = 500 * time.Millisecond
+
+	// WarmUpInterval is how often the worker proactively re-warms the LLM
+	// and embedding models (see modelclient.Client.WarmUp) by issuing a
+	// trivial call to each, so that a real resume request rarely lands on
+	// a cold model. Unlike every other duration in this file, this one is
+	// NOT measured — Docker Model Runner's idle-eviction window is not
+	// observable from this app (the only related endpoint checked,
+	// tokenize, 404s per decisions.md, and no eviction-window equivalent
+	// is documented either). 4 minutes is a deliberately short,
+	// conservative guess: cheap even if wrong (one short LLM call plus
+	// one short embed call), and short enough to very likely beat
+	// whatever the real eviction window is in practice. Re-measure and
+	// replace this comment if Model Runner's actual eviction window is
+	// ever confirmed.
+	WarmUpInterval = 4 * time.Minute
 
 	// EmbeddingDimension is the output size of ai/nomic-embed-text-v1.5.
 	// Must match the `resume_chunks.embedding VECTOR(N)` column in
