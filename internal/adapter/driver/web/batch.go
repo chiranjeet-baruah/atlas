@@ -41,14 +41,8 @@ func NewBatchPageHandler(uc batchStatusRunner) gin.HandlerFunc {
 
 // NewBatchRowsHandler renders just the status table, for the batch page's
 // Refresh button to swap in via htmx. There is no automatic polling — the
-// button fires this on click only.
-//
-// A use-case error here renders inline inside the fragment at 200, not
-// through renderError: htmx does not swap a non-2xx response into its
-// target by default, so a 404/500 full-page response from this endpoint
-// would leave the Refresh button's target empty with the error invisible
-// to the user. Rendering the error inside "batch_rows" at 200 keeps it
-// visible.
+// button fires this on click only. See the package doc comment for why a
+// use-case error here renders inline at 200 instead of through renderError.
 func NewBatchRowsHandler(uc batchStatusRunner) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		resp, err := uc.ByBatchID(c.Request.Context(), c.Param("batch_id"))

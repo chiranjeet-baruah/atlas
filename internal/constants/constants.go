@@ -189,7 +189,7 @@ const (
 	// MaxOCRPages bounds how many pages the OCR fallback rasterizes and
 	// reads. OCR costs roughly a second per page (measured: ~1.3s/page
 	// combined pdftoppm+tesseract), so an unbounded page count risks
-	// blowing ResumeProcessingTimeout on a long scanned document. Resumes
+	// blowing ExtractStageTimeout on a long scanned document. Resumes
 	// are essentially never longer than this in practice.
 	MaxOCRPages = 5
 

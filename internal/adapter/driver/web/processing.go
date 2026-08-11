@@ -61,14 +61,9 @@ func NewProcessingPageHandler(uc batchListRunner) gin.HandlerFunc {
 
 // NewProcessingRowsHandler renders just the batch table, for the
 // processing page's Refresh button to swap in via htmx. There is no
-// automatic polling, matching the batch page's Refresh button.
-//
-// A use-case error here renders inline inside the fragment at 200, not
-// through renderError: htmx does not swap a non-2xx response into its
-// target by default, so a 404/500 full-page response from this endpoint
-// would leave the Refresh button's target empty with the error invisible
-// to the user. Rendering the error inside "processing_rows" at 200 keeps
-// it visible — identical reasoning to NewBatchRowsHandler.
+// automatic polling, matching the batch page's Refresh button. See the
+// package doc comment for why a use-case error here renders inline at 200
+// instead of through renderError.
 func NewProcessingRowsHandler(uc batchListRunner) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		batches, err := uc.ListBatches(c.Request.Context())

@@ -123,10 +123,9 @@ func TestUploadHandler(t *testing.T) {
 	}
 }
 
-// TestUploadHandler_RejectsOversizedBody proves the fix for the unbounded
-// request-body finding: a request larger than constants.MaxUploadBytes
-// must be rejected with 413 before it's fully read into memory, not
-// accepted and processed.
+// TestUploadHandler_RejectsOversizedBody asserts that a request larger than
+// constants.MaxUploadBytes is rejected with 413 before it's fully read into
+// memory, not accepted and processed.
 func TestUploadHandler_RejectsOversizedBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

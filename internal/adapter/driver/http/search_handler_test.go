@@ -90,9 +90,8 @@ func TestSearchHandler(t *testing.T) {
 	}
 }
 
-// TestSearchHandler_RejectsOversizedBody proves the fix for the unbounded
-// request-body finding: a /search body larger than
-// constants.MaxSearchBodyBytes must be rejected with 413 before it's fully
+// TestSearchHandler_RejectsOversizedBody asserts that a /search body larger
+// than constants.MaxSearchBodyBytes is rejected with 413 before it's fully
 // read into memory and bound.
 func TestSearchHandler_RejectsOversizedBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -73,12 +73,9 @@ type SearchResultDTO struct {
 	Location        string   `json:"location"`
 	// MatchPercentage is 0-100, higher means a better match. Derived from
 	// pgvector cosine distance (repository.go's Search, best_distance = 1 -
-	// cosine similarity) via matchPercentage below. Unlike raw distance,
-	// higher-is-better here actually matches the name, so — unlike the old
-	// "distance" field — this one is safe to think of the way its name
-	// suggests. Results are still sorted best-first server-side (ORDER BY
-	// best_distance ASC, which is also highest-percentage-first); a client
-	// never needs to re-sort this.
+	// cosine similarity) via matchPercentage below. Results are already
+	// sorted best-first server-side (ORDER BY best_distance ASC, which is
+	// also highest-percentage-first); a client never needs to re-sort this.
 	MatchPercentage int `json:"match_percentage"`
 }
 
