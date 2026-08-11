@@ -9,14 +9,11 @@ import (
 
 	"resumesearch/internal/domain"
 	"resumesearch/internal/dto"
+	"resumesearch/internal/service"
 )
 
 type statusByIDRunner interface {
 	ByID(ctx context.Context, id string) (dto.StatusResponse, error)
-}
-
-type statusByBatchRunner interface {
-	ByBatchID(ctx context.Context, batchID string) (dto.BatchStatusResponse, error)
 }
 
 func NewStatusHandler(uc statusByIDRunner) gin.HandlerFunc {
@@ -30,7 +27,7 @@ func NewStatusHandler(uc statusByIDRunner) gin.HandlerFunc {
 	}
 }
 
-func NewBatchStatusHandler(uc statusByBatchRunner) gin.HandlerFunc {
+func NewBatchStatusHandler(uc service.BatchStatusReader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		resp, err := uc.ByBatchID(c.Request.Context(), c.Param("batch_id"))
 		if err != nil {

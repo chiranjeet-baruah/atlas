@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,13 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"resumesearch/internal/dto"
+	"resumesearch/internal/service"
 )
-
-// searchRunner is the seam the search handlers need — satisfied by
-// *service.SearchResumesUseCase.
-type searchRunner interface {
-	Run(ctx context.Context, req dto.SearchRequest) (dto.SearchResponse, error)
-}
 
 // searchResultsView is the "search_results" fragment's template data — it
 // covers both a validation failure (Error set, no use case call) and a
@@ -40,7 +34,7 @@ func NewSearchPageHandler() gin.HandlerFunc {
 // derived from — MatchPercentage's higher-is-better ordering agrees with
 // that sort, so this handler has no reordering to get wrong (see
 // internal/dto/dto.go's SearchResultDTO.MatchPercentage comment).
-func NewSearchSubmitHandler(uc searchRunner) gin.HandlerFunc {
+func NewSearchSubmitHandler(uc service.SearchRunner) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		query := strings.TrimSpace(c.PostForm("query"))
 		if query == "" {

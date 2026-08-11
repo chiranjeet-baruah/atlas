@@ -1,21 +1,13 @@
 package web
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"resumesearch/internal/adapter/driver/multipartform"
-	"resumesearch/internal/dto"
 	"resumesearch/internal/service"
 )
-
-// uploadRunner is the seam the upload handlers need — satisfied by
-// *service.UploadResumesUseCase.
-type uploadRunner interface {
-	Run(ctx context.Context, files []service.UploadFile) (dto.UploadBatchResponse, error)
-}
 
 // NewUploadPageHandler renders the empty upload form.
 func NewUploadPageHandler() gin.HandlerFunc {
@@ -31,7 +23,7 @@ func NewUploadPageHandler() gin.HandlerFunc {
 // there is no 413/400 split here the way the JSON API has one, since a
 // browser form submission has no equivalent of a JSON error status to
 // react to; the message is enough.
-func NewUploadSubmitHandler(uc uploadRunner) gin.HandlerFunc {
+func NewUploadSubmitHandler(uc service.UploadRunner) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		files, err := multipartform.ParseUploadFiles(c)
 		if err != nil {

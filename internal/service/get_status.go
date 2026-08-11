@@ -16,6 +16,13 @@ func NewGetStatusUseCase(repo ResumeRepository) *GetStatusUseCase {
 	return &GetStatusUseCase{repo: repo}
 }
 
+// BatchStatusReader is the seam driver adapters need to look up one batch's
+// status without depending on GetStatusUseCase's concrete type — satisfied
+// by *GetStatusUseCase.
+type BatchStatusReader interface {
+	ByBatchID(ctx context.Context, batchID string) (dto.BatchStatusResponse, error)
+}
+
 // ByID wraps repository errors with %w so domain.ErrNotFound survives to
 // the HTTP driver, which is what decides 404 vs 500 — this use case has no
 // business making that call.

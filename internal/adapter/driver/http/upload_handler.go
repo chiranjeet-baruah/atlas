@@ -1,25 +1,16 @@
 package http
 
 import (
-	"context"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"resumesearch/internal/adapter/driver/multipartform"
-	"resumesearch/internal/dto"
 	"resumesearch/internal/service"
 )
 
-// uploadRunner is the minimal seam the handler needs — satisfied by
-// *service.UploadResumesUseCase, but expressed as an interface here so
-// the handler is testable without the full use case.
-type uploadRunner interface {
-	Run(ctx context.Context, files []service.UploadFile) (dto.UploadBatchResponse, error)
-}
-
-func NewUploadHandler(uc uploadRunner) gin.HandlerFunc {
+func NewUploadHandler(uc service.UploadRunner) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		files, err := multipartform.ParseUploadFiles(c)
 		if err != nil {

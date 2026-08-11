@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	"errors"
 	"net/http"
 
@@ -9,13 +8,10 @@ import (
 
 	"resumesearch/internal/constants"
 	"resumesearch/internal/dto"
+	"resumesearch/internal/service"
 )
 
-type searchRunner interface {
-	Run(ctx context.Context, req dto.SearchRequest) (dto.SearchResponse, error)
-}
-
-func NewSearchHandler(uc searchRunner) gin.HandlerFunc {
+func NewSearchHandler(uc service.SearchRunner) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// A search request is a short query plus a few filter fields and
 		// should never legitimately approach this size — bound it before
