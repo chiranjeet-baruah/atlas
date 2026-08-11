@@ -31,11 +31,6 @@ const (
 	// the consumer forever.
 	ExtractStageTimeout = 30 * time.Second
 
-	// ClassifyStageTimeout bounds the classify stage's consumer: 3
-	// independent LLM attempts (see MaxExtractionRetries, LLMAttemptTimeout)
-	// plus slack for the surrounding save/publish work.
-	ClassifyStageTimeout = time.Duration(MaxExtractionRetries)*LLMAttemptTimeout + 30*time.Second
-
 	// StatusWriteTimeout bounds writeStatus's own UpdateStatus call. It is
 	// deliberately short and independent of the caller's (possibly already
 	// expired) context — see internal/service/status_write.go — because a
@@ -150,6 +145,11 @@ const (
 	// for structured field extraction (small/local models are the highest-risk
 	// component for schema adherence).
 	MaxExtractionRetries = 3
+
+	// ClassifyStageTimeout bounds the classify stage's consumer: 3
+	// independent LLM attempts (see MaxExtractionRetries, LLMAttemptTimeout
+	// above) plus slack for the surrounding save/publish work.
+	ClassifyStageTimeout = time.Duration(MaxExtractionRetries)*LLMAttemptTimeout + 30*time.Second
 
 	// ExtractionRetryBackoff is a short pause between LLM extraction
 	// attempts. Without it, a retry against a model that just failed (e.g.
