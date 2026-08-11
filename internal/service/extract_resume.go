@@ -27,16 +27,12 @@ func NewExtractResumeUseCase(repo ResumeRepository, extractor TextExtractor, pub
 // semantics, and a resume already in a terminal state (DONE or FAILED) is
 // skipped rather than reprocessed.
 func (uc *ExtractResumeUseCase) Run(ctx context.Context, resumeID string) error {
-	resume, err := uc.repo.GetByID(ctx, resumeID)
+	resume, proceed, err := beginStage(ctx, uc.repo, resumeID)
 	if err != nil {
-		return fmt.Errorf("get resume %s: %w", resumeID, err)
+		return err
 	}
-	if resume.Status.IsTerminal() {
+	if !proceed {
 		return nil
-	}
-
-	if err := uc.repo.UpdateStatus(ctx, resumeID, domain.StatusProcessing, ""); err != nil {
-		return fmt.Errorf("mark resume %s processing: %w", resumeID, err)
 	}
 
 	rawText, err := uc.extractor.ExtractText(ctx, resume.FilePath)

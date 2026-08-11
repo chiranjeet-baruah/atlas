@@ -35,16 +35,12 @@ func NewEmbedResumeUseCase(repo ResumeRepository, model ModelClient) *EmbedResum
 // stage safe: redundant re-embedding is wasted work, not a correctness
 // problem.
 func (uc *EmbedResumeUseCase) Run(ctx context.Context, resumeID string) error {
-	resume, err := uc.repo.GetByID(ctx, resumeID)
+	resume, proceed, err := beginStage(ctx, uc.repo, resumeID)
 	if err != nil {
-		return fmt.Errorf("get resume %s: %w", resumeID, err)
+		return err
 	}
-	if resume.Status.IsTerminal() {
+	if !proceed {
 		return nil
-	}
-
-	if err := uc.repo.UpdateStatus(ctx, resumeID, domain.StatusProcessing, ""); err != nil {
-		return fmt.Errorf("mark resume %s processing: %w", resumeID, err)
 	}
 
 	textChunks := utils.RecursiveSplit(resume.RawText, constants.ChunkSizeWords)

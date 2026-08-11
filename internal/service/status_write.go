@@ -28,6 +28,26 @@ func writeStatus(ctx context.Context, repo ResumeRepository, id string, status d
 	return repo.UpdateStatus(wctx, id, status, errMsg)
 }
 
+// beginStage loads resumeID and marks it Processing, unless it's already
+// in a terminal state — in which case the caller should return nil and
+// skip its stage-specific work, treating this as a no-op success. Every
+// pipeline stage (extract/classify/embed) starts its Run this way; this
+// exists so that identical preamble isn't hand-rolled three times with the
+// same error-wrap strings and the same terminal-skip logic.
+func beginStage(ctx context.Context, repo ResumeRepository, resumeID string) (domain.Resume, bool, error) {
+	resume, err := repo.GetByID(ctx, resumeID)
+	if err != nil {
+		return domain.Resume{}, false, fmt.Errorf("get resume %s: %w", resumeID, err)
+	}
+	if resume.Status.IsTerminal() {
+		return resume, false, nil
+	}
+	if err := repo.UpdateStatus(ctx, resumeID, domain.StatusProcessing, ""); err != nil {
+		return domain.Resume{}, false, fmt.Errorf("mark resume %s processing: %w", resumeID, err)
+	}
+	return resume, true, nil
+}
+
 // failResume marks a resume FAILED via writeStatus and returns procErr,
 // the error that triggered the failure. If the FAILED write itself fails
 // (writeStatus's whole reason to exist doesn't make that impossible, just
