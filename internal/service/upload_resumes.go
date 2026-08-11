@@ -18,6 +18,13 @@ type UploadFile struct {
 	Content  []byte
 }
 
+// UploadRunner is the seam driver adapters need to call UploadResumesUseCase
+// without depending on its concrete type or its ResumeRepository/
+// EventPublisher dependencies — satisfied by *UploadResumesUseCase.
+type UploadRunner interface {
+	Run(ctx context.Context, files []UploadFile) (dto.UploadBatchResponse, error)
+}
+
 type UploadResumesUseCase struct {
 	repo       ResumeRepository
 	publisher  EventPublisher

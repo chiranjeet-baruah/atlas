@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/exp/slog"
 
 	"resumesearch/internal/constants"
 	"resumesearch/internal/domain"
@@ -16,26 +20,31 @@ import (
 
 // Client is the single OpenAI-compatible HTTP client used for both LLM
 // extraction and embeddings. Parameterized by base URL + model name per
-// role — Docker Model Runner, Ollama, and hosted OpenAI/Anthropic-compatible
-// APIs all speak this same shape, so swapping providers is an env-var
-// change, not a code change.
+// role. Embeddings still run on Docker Model Runner; chat/extraction runs
+// against a hosted API (e.g. Groq) authenticated via llmAPIKey — both speak
+// the same OpenAI-compatible chat/completions and embeddings shape, so the
+// backend for either role is an env-var change, not a code change.
 type Client struct {
 	llmURL     string
 	llmModel   string
+	llmAPIKey  string
 	embedURL   string
 	embedModel string
 	httpClient *http.Client
 }
 
 // New builds a Client. llmURL/embedURL may or may not have a trailing
-// slash — Docker Model Runner's injected `LLM_URL`/`EMBED_URL` (verified
-// empirically: "http://model-runner.docker.internal/v1/") does include
-// one, and a bare trailing-slash concatenation would otherwise produce a
-// double slash before "chat/completions"/"embeddings".
-func New(llmURL, llmModel, embedURL, embedModel string) *Client {
+// slash — Docker Model Runner's injected `EMBED_URL` (verified empirically:
+// "http://model-runner.docker.internal/v1/") does include one, and a bare
+// trailing-slash concatenation would otherwise produce a double slash
+// before "chat/completions"/"embeddings". llmAPIKey is sent as a Bearer
+// token on chat requests only; pass "" for backends (like DMR) that need
+// no auth.
+func New(llmURL, llmModel, llmAPIKey, embedURL, embedModel string) *Client {
 	return &Client{
 		llmURL:     strings.TrimSuffix(llmURL, "/"),
 		llmModel:   llmModel,
+		llmAPIKey:  llmAPIKey,
 		embedURL:   strings.TrimSuffix(embedURL, "/"),
 		embedModel: embedModel,
 		httpClient: &http.Client{},
@@ -71,10 +80,15 @@ func (c *Client) Extract(ctx context.Context, text string) (domain.ExtractedFiel
 		lastErr = err
 
 		if attempt < constants.MaxExtractionRetries {
+			delay := constants.ExtractionRetryBackoff
+			var rle *rateLimitError
+			if errors.As(err, &rle) && rle.retryAfter > 0 {
+				delay = rle.retryAfter
+			}
 			select {
 			case <-ctx.Done():
 				return domain.ExtractedFields{}, fmt.Errorf("extraction failed after %d attempts: %w", attempt, lastErr)
-			case <-time.After(constants.ExtractionRetryBackoff):
+			case <-time.After(delay):
 			}
 		}
 	}
@@ -84,6 +98,10 @@ func (c *Client) Extract(ctx context.Context, text string) (domain.ExtractedFiel
 func (c *Client) extractOnce(ctx context.Context, text string, attempt int) (domain.ExtractedFields, error) {
 	attemptCtx, cancel := context.WithTimeout(ctx, constants.LLMAttemptTimeout)
 	defer cancel()
+
+	if len(text) > constants.MaxExtractionTextChars {
+		text = text[:constants.MaxExtractionTextChars]
+	}
 
 	content, err := c.chatCompletion(attemptCtx, fmt.Sprintf(extractionPrompt, text))
 	if err != nil {
@@ -127,12 +145,43 @@ func extractJSONObject(content string) string {
 	return content[start:]
 }
 
+// rateLimitError is returned when a chat completion hits a 429, carrying
+// the provider's Retry-After hint (0 if absent/unparseable) so Extract's
+// retry loop can honor it instead of the default fixed backoff — DMR never
+// rate-limited, but a billed hosted API does.
+type rateLimitError struct {
+	retryAfter time.Duration
+	status     int
+	body       string
+}
+
+func (e *rateLimitError) Error() string {
+	return fmt.Sprintf("chat completion rate limited (status %d): %s", e.status, e.body)
+}
+
+// parseRetryAfter parses a Retry-After header value, trying integer-seconds
+// form (what OpenAI-compatible providers send) then the HTTP-date form.
+// Returns 0 if empty or unparseable, signaling "no hint" to the caller.
+func parseRetryAfter(v string) time.Duration {
+	if v == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		return time.Until(t)
+	}
+	return 0
+}
+
 func (c *Client) chatCompletion(ctx context.Context, prompt string) (string, error) {
 	reqBody, err := json.Marshal(map[string]any{
 		"model": c.llmModel,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
+		"max_tokens": constants.MaxExtractionCompletionTokens,
 	})
 	if err != nil {
 		return "", fmt.Errorf("marshal chat completion request: %w", err)
@@ -143,6 +192,9 @@ func (c *Client) chatCompletion(ctx context.Context, prompt string) (string, err
 		return "", fmt.Errorf("build chat completion request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.llmAPIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.llmAPIKey)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -154,6 +206,13 @@ func (c *Client) chatCompletion(ctx context.Context, prompt string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("read chat completion response: %w", err)
 	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return "", &rateLimitError{
+			retryAfter: parseRetryAfter(resp.Header.Get("Retry-After")),
+			status:     resp.StatusCode,
+			body:       truncate(body, 500),
+		}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("chat completion returned status %d: %s", resp.StatusCode, truncate(body, 500))
 	}
@@ -164,6 +223,11 @@ func (c *Client) chatCompletion(ctx context.Context, prompt string) (string, err
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+			TotalTokens      int `json:"total_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return "", fmt.Errorf("decode chat completion response: %w", err)
@@ -171,22 +235,22 @@ func (c *Client) chatCompletion(ctx context.Context, prompt string) (string, err
 	if len(parsed.Choices) == 0 {
 		return "", fmt.Errorf("no choices in chat completion response")
 	}
+	slog.InfoContext(ctx, "chat completion usage",
+		"prompt_tokens", parsed.Usage.PromptTokens,
+		"completion_tokens", parsed.Usage.CompletionTokens,
+		"total_tokens", parsed.Usage.TotalTokens,
+	)
 	return parsed.Choices[0].Message.Content, nil
 }
 
-// WarmUp issues one trivial call to each of the LLM and embedding
-// endpoints, forcing Docker Model Runner to load both models if they're
-// currently cold/evicted. It's a latency optimization only: Extract's own
-// retry loop remains the correctness backstop if a real resume request
-// still lands on a cold model, so callers should log a WarmUp error rather
-// than treat it as fatal.
+// WarmUp issues one trivial embed call, forcing Docker Model Runner to load
+// the embedding model if it's currently cold/evicted. Chat/extraction runs
+// against a hosted API with no cold-start/eviction to warm, so there is no
+// LLM half to this anymore. It's a latency optimization only: a real
+// resume request landing on a cold embed model still succeeds via its own
+// timeout budget, so callers should log a WarmUp error rather than treat it
+// as fatal.
 func (c *Client) WarmUp(ctx context.Context) error {
-	llmCtx, cancel := context.WithTimeout(ctx, constants.LLMAttemptTimeout)
-	defer cancel()
-	if _, err := c.chatCompletion(llmCtx, "Reply with the single word: ok"); err != nil {
-		return fmt.Errorf("warm up llm: %w", err)
-	}
-
 	embedCtx, cancel := context.WithTimeout(ctx, constants.EmbedAttemptTimeout)
 	defer cancel()
 	if _, err := c.Embed(embedCtx, "warmup"); err != nil {

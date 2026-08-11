@@ -35,11 +35,12 @@ func workerCmd() *cobra.Command {
 			defer pool.Close()
 
 			repo := postgres.NewRepository(pool)
-			model := modelclient.New(requireEnv("LLM_URL"), requireEnv("LLM_MODEL"), requireEnv("EMBED_URL"), requireEnv("EMBED_MODEL"))
+			model := modelclient.New(requireEnv("LLM_URL"), requireEnv("LLM_MODEL"), requireEnv("LLM_API_KEY"), requireEnv("EMBED_URL"), requireEnv("EMBED_MODEL"))
 
-			// Fire-and-forget: WarmUp can take up to LLMAttemptTimeout +
-			// EmbedAttemptTimeout (135s) on a cold model, and startup must
-			// not block the consumers below for that long just to save the
+			// Fire-and-forget: WarmUp can take up to EmbedAttemptTimeout
+			// (15s) on a cold embed model — chat/extraction runs against a
+			// hosted API with no cold-start to warm — and startup must not
+			// block the consumers below for that long just to save the
 			// very first message a cold-start cost. runWarmUp's ticker
 			// covers the recurring case regardless of how this one turns out.
 			go func() {

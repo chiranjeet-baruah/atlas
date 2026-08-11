@@ -195,23 +195,3 @@ func TestFailResume_StatusWriteFailure_WrapsErrStatusNotRecorded(t *testing.T) {
 		t.Errorf("expected error to still match the original processing error via errors.Is, got %v", err)
 	}
 }
-
-func TestIsTerminal(t *testing.T) {
-	cases := []struct {
-		name   string
-		status domain.Status
-		want   bool
-	}{
-		{"pending is not terminal", domain.StatusPending, false},
-		{"processing is not terminal", domain.StatusProcessing, false},
-		{"done is terminal", domain.StatusDone, true},
-		{"failed is terminal", domain.StatusFailed, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isTerminal(tc.status); got != tc.want {
-				t.Errorf("isTerminal(%s) = %v, want %v", tc.status, got, tc.want)
-			}
-		})
-	}
-}

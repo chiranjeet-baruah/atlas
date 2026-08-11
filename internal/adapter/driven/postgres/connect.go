@@ -9,11 +9,11 @@ import (
 	pgxvec "github.com/pgvector/pgvector-go/pgx"
 )
 
-// Connect opens a pgxpool.Pool with the pgvector type codec registered on
+// connect opens a pgxpool.Pool with the pgvector type codec registered on
 // every new connection. Without this, binding/scanning pgvector.Vector
 // against a VECTOR column fails at runtime — every caller (serve, worker,
-// tests) must go through this constructor rather than pgxpool.New directly.
-func Connect(ctx context.Context, connString string) (*pgxpool.Pool, error) {
+// tests) must go through MigrateAndConnect rather than pgxpool.New directly.
+func connect(ctx context.Context, connString string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("parse connection string: %w", err)

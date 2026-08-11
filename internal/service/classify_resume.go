@@ -25,16 +25,12 @@ func NewClassifyResumeUseCase(repo ResumeRepository, model ModelClient, publishe
 // Run processes one resume's classify stage. Safe to call more than once
 // for the same resumeID — see ExtractResumeUseCase.Run's doc comment.
 func (uc *ClassifyResumeUseCase) Run(ctx context.Context, resumeID string) error {
-	resume, err := uc.repo.GetByID(ctx, resumeID)
+	resume, proceed, err := beginStage(ctx, uc.repo, resumeID)
 	if err != nil {
-		return fmt.Errorf("get resume %s: %w", resumeID, err)
+		return err
 	}
-	if isTerminal(resume.Status) {
+	if !proceed {
 		return nil
-	}
-
-	if err := uc.repo.UpdateStatus(ctx, resumeID, domain.StatusProcessing, ""); err != nil {
-		return fmt.Errorf("mark resume %s processing: %w", resumeID, err)
 	}
 
 	fields, err := uc.model.Extract(ctx, resume.RawText)

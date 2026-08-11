@@ -43,7 +43,7 @@ func serveCmd() *cobra.Command {
 			}
 			defer producer.Close()
 
-			model := modelclient.New(requireEnv("LLM_URL"), requireEnv("LLM_MODEL"), requireEnv("EMBED_URL"), requireEnv("EMBED_MODEL"))
+			model := modelclient.New(requireEnv("LLM_URL"), requireEnv("LLM_MODEL"), requireEnv("LLM_API_KEY"), requireEnv("EMBED_URL"), requireEnv("EMBED_MODEL"))
 
 			uploadUC := service.NewUploadResumesUseCase(repo, producer, requireEnv("STORAGE_DIR"))
 			statusUC := service.NewGetStatusUseCase(repo)

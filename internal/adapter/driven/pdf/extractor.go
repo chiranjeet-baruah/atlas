@@ -97,7 +97,7 @@ func pageNumber(filename string) int {
 // extractWithOCR rasterizes the first constants.MaxOCRPages pages to PNGs
 // and runs tesseract on each, in page order, then joins the per-page text
 // with blank lines. Bounding the page count keeps OCR — on the order of
-// a second per page — inside ResumeProcessingTimeout even for long
+// a second per page — inside constants.ExtractStageTimeout even for long
 // documents.
 func extractWithOCR(ctx context.Context, path string) (string, error) {
 	tmpDir, err := os.MkdirTemp("", "resume-ocr-*")

@@ -14,17 +14,17 @@ import (
 
 // MigrateAndConnect runs every migration in dir using golang-migrate, then
 // returns a pool with the pgvector codec registered. Migrations must run
-// first: the codec registration in Connect depends on the `vector`
+// first: the codec registration in connect depends on the `vector`
 // extension already existing, which fails with "vector type not found in
 // the database" if attempted any earlier.
 func MigrateAndConnect(ctx context.Context, connString, dir string) (*pgxpool.Pool, error) {
-	if err := RunMigrations(connString, dir); err != nil {
+	if err := runMigrations(connString, dir); err != nil {
 		return nil, err
 	}
-	return Connect(ctx, connString)
+	return connect(ctx, connString)
 }
 
-// RunMigrations applies every migration in dir, in version order, via
+// runMigrations applies every migration in dir, in version order, via
 // golang-migrate's pgx v5 driver.
 //
 // `app` and `worker` both call this on startup, so concurrent runs against
@@ -35,7 +35,7 @@ func MigrateAndConnect(ctx context.Context, connString, dir string) (*pgxpool.Po
 // own pg_advisory_lock for the duration of a run, so this races safely
 // without any locking code of our own — see
 // TestMigrateAndConnect_ConcurrentCallersDoNotRace.
-func RunMigrations(connString, dir string) error {
+func runMigrations(connString, dir string) error {
 	m, err := migrate.New("file://"+dir, toMigrateURL(connString))
 	if err != nil {
 		return fmt.Errorf("create migrate instance: %w", err)

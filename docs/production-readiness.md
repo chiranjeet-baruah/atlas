@@ -4,7 +4,7 @@ atlas currently runs as a local demo: one Postgres database, a small 3-partition
 
 The plan assumes:
 - The service will run across multiple machines (Kubernetes or ECS), not one Docker host.
-- LLM and embedding calls will go to a hosted API instead of running our own model server.
+- LLM calls go to a hosted API instead of running our own model server (done — see Step 2). Embedding calls stay on our own model runner for now; moving those to a hosted API is a separate migration (pgvector dimension change + re-embedding existing data), not covered by this plan.
 - The service will serve multiple customers ("tenants"), and one customer must never see another's data.
 - Login will be handled by plugging into an existing identity provider (OIDC/SSO), not built from scratch.
 - Both search traffic and resume-upload traffic need to handle much higher volume than today.
@@ -30,13 +30,17 @@ A few things are already built the right way and don't need rework:
 
 ## Step 2: Make the app able to start up outside of Docker Compose
 
-**What's wrong today:** The app won't even start outside of the current local setup. It needs four settings — the address and model name for the LLM, and the address and model name for the embedding model — and today these are only supplied by a Docker Compose feature ("Model Runner") that won't exist in production. Without them, the app exits immediately on startup. On top of that, the database password is currently just plain text sitting in `docker-compose.yml`.
+**Status: chat/extraction half done.** `Extract` now calls a hosted OpenAI-compatible API (Groq) via `LLM_URL`/`LLM_MODEL`/`LLM_API_KEY`, with auth, a completion-length cap, prompt-length cap, 429/`Retry-After` handling, and per-call token-usage logging (see `decisions.md`). Embeddings deliberately still run on Docker Model Runner (`EMBED_URL`/`EMBED_MODEL`) — moving those requires a pgvector dimension migration and re-embedding every stored chunk, out of scope for that change. Two things remain:
 
-**What to do:** Two changes here:
-1. Swap the code that talks to the LLM and embedding model (`internal/adapter/driven/modelclient/client.go`) to call a hosted API instead of the local model runner. While doing this, also add a timeout and a retry to the embedding call specifically — right now it has neither, which matters because it's called directly while a user is waiting on a search request.
-2. Move all secrets (database password, hosted API key) out of plain text files and into a real secrets store appropriate for wherever you deploy (e.g. a Kubernetes Secret, AWS Secrets Manager, or similar).
+**What's wrong today:** `Embed` still has no timeout or retry of its own — it inherits whatever deadline the caller's context carries, which matters because it's called directly while a user is waiting on a search request (`internal/service/search_resumes.go`). And the database password, plus the new `LLM_API_KEY`, are currently just plain text sitting in `docker-compose.yml`/`.env`.
 
-**How you know it's done:** Start the app with only real environment variables/secrets set (no Docker Compose Model Runner involved) and confirm it boots and can successfully call the hosted LLM and embedding API.
+**What to do:** Two changes remain:
+1. Add a timeout and a retry to the embedding call specifically (`internal/adapter/driven/modelclient/client.go`'s `Embed`).
+2. Move all secrets (database password, `LLM_API_KEY`) out of plain text files and into a real secrets store appropriate for wherever you deploy (e.g. a Kubernetes Secret, AWS Secrets Manager, or similar).
+
+**How you know it's done:** Start the app with only real environment variables/secrets set (no Docker Compose Model Runner involved for the LLM) and confirm it boots and can successfully call the hosted LLM API and a hosted embedding API.
+
+**Also still open, deferred pending real hosted-API latency measurements:** `LLMAttemptTimeout` (120s) is sized for Docker Model Runner's cold-start and hasn't been re-measured against the hosted API's steady-state latency. It's a shared constant — `ClassifyStageTimeout` derives from it and bounds the Kafka consumer handler — so retune it deliberately with real measured numbers once this runs against production traffic, not as a guess (see `decisions.md`).
 
 ## Step 3: Add proper logging and health checks
 

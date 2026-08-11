@@ -26,10 +26,10 @@ func (e *InputError) Error() string { return e.Message }
 
 // ParseUploadFiles bounds the request body to constants.MaxUploadBytes,
 // parses the "files" multipart field, and reads every part fully into
-// memory. internal/adapter/driver/http calls this; a planned web driver
-// adapter (a later task in this plan) will too, so the two upload entry
-// points will enforce identical limits — MaxUploadBytes and MaxUploadFiles
-// exist in exactly one place.
+// memory. Both internal/adapter/driver/http and internal/adapter/driver/web
+// call this for their respective upload entry points, so
+// MaxUploadBytes/MaxUploadFiles are enforced identically by both and exist
+// in exactly one place.
 func ParseUploadFiles(c *gin.Context) ([]service.UploadFile, error) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, constants.MaxUploadBytes)
 

@@ -1,6 +1,10 @@
 package web
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+
+	"resumesearch/internal/service"
+)
 
 // New wires the web UI onto router: parses embedded templates, serves
 // embedded static assets, and registers every /ui/* route. uploadUC,
@@ -10,8 +14,8 @@ import "github.com/gin-gonic/gin"
 // front of the same use cases, not a second copy of them. statusUC and
 // listUC are typically the same *service.GetStatusUseCase instance,
 // passed twice because each handler group declares its own narrow
-// interface (batchStatusRunner vs batchListRunner).
-func New(router *gin.Engine, uploadUC uploadRunner, statusUC batchStatusRunner, listUC batchListRunner, searchUC searchRunner) {
+// interface (service.BatchStatusReader vs batchListRunner).
+func New(router *gin.Engine, uploadUC service.UploadRunner, statusUC service.BatchStatusReader, listUC batchListRunner, searchUC service.SearchRunner) {
 	router.SetHTMLTemplate(ParseTemplates())
 	router.StaticFS("/ui/static", StaticFS())
 

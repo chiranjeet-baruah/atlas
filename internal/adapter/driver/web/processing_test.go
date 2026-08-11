@@ -97,9 +97,11 @@ func TestProcessingRowsHandler(t *testing.T) {
 			wantBodyHas: validBatchID,
 		},
 		{
-			// Locks in the exact gap fixed by commit 17d016b for batch/search:
-			// the error message alone isn't enough, the slug reference must
-			// also survive into the rendered fragment.
+			// A use-case error must render inline inside the fragment (not a
+			// 500 page) with both the generic message AND the error-slug
+			// reference surviving into the HTML — htmx won't swap a non-2xx
+			// response into its target, so a full-page error response here
+			// would leave the fragment's target empty.
 			name:           "use-case error renders inline with its slug, not a 500 page",
 			stub:           &stubBatchListRunner{err: errors.New("db unreachable at 10.0.0.5:5432")},
 			wantBodyHas:    "Something went wrong",

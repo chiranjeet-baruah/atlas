@@ -39,7 +39,7 @@ func TestNew_TrimsTrailingSlashFromURLs(t *testing.T) {
 			defer server.Close()
 
 			base := tc.baseURL(server.URL)
-			c := modelclient.New(base, "llm-model", base, "embed-model")
+			c := modelclient.New(base, "llm-model", "", base, "embed-model")
 			if _, err := c.Embed(t.Context(), "text"); err != nil {
 				t.Fatalf("Embed failed: %v", err)
 			}
@@ -96,7 +96,7 @@ func TestEmbed(t *testing.T) {
 			server := httptest.NewServer(tc.handler)
 			defer server.Close()
 
-			c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+			c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
 			vec, err := c.Embed(t.Context(), "some resume text")
 
 			if tc.wantErr {
@@ -161,7 +161,7 @@ func TestExtract(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+			c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
 			fields, err := c.Extract(t.Context(), "resume text with go and postgres, 5 years")
 
 			if tc.wantErr {
@@ -216,7 +216,7 @@ func TestExtract_BacksOffBetweenAttempts(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+			c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
 			start := time.Now()
 			if _, err := c.Extract(t.Context(), "text"); err != nil {
 				t.Fatalf("Extract failed: %v", err)
@@ -239,7 +239,7 @@ func TestExtract_CanceledContextStopsRetryingDuringBackoff(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+	c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(20 * time.Millisecond)
@@ -258,53 +258,36 @@ func TestExtract_CanceledContextStopsRetryingDuringBackoff(t *testing.T) {
 	}
 }
 
-// TestWarmUp covers both of WarmUp's calls (chat completion, embed) and,
-// via wantEmbedCalls, locks in that a failing LLM call short-circuits
-// before ever reaching the embed endpoint — WarmUp is meant to be a cheap,
-// ordered check of both dependencies, not two independent ones.
+// TestWarmUp covers WarmUp's one remaining call (embed) and, critically,
+// asserts /chat/completions is never hit — chat/extraction now runs
+// against a hosted API with no cold-start to warm, so WarmUp must not touch
+// it at all anymore.
 func TestWarmUp(t *testing.T) {
 	cases := []struct {
-		name           string
-		chatStatus     int
-		embedStatus    int
-		wantErr        bool
-		wantEmbedCalls int
+		name        string
+		embedStatus int
+		wantErr     bool
 	}{
 		{
-			name:           "both endpoints healthy succeeds",
-			chatStatus:     http.StatusOK,
-			embedStatus:    http.StatusOK,
-			wantEmbedCalls: 1,
+			name:        "embed endpoint healthy succeeds",
+			embedStatus: http.StatusOK,
 		},
 		{
-			name:           "llm endpoint failing is an error and short-circuits before embed",
-			chatStatus:     http.StatusInternalServerError,
-			embedStatus:    http.StatusOK,
-			wantErr:        true,
-			wantEmbedCalls: 0,
-		},
-		{
-			name:           "embed endpoint failing is an error",
-			chatStatus:     http.StatusOK,
-			embedStatus:    http.StatusInternalServerError,
-			wantErr:        true,
-			wantEmbedCalls: 1,
+			name:        "embed endpoint failing is an error",
+			embedStatus: http.StatusInternalServerError,
+			wantErr:     true,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			chatCalls := 0
 			embedCalls := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				switch req.URL.Path {
 				case "/chat/completions":
-					if tc.chatStatus != http.StatusOK {
-						w.WriteHeader(tc.chatStatus)
-						return
-					}
-					_ = json.NewEncoder(w).Encode(map[string]any{
-						"choices": []map[string]any{{"message": map[string]any{"content": "ok"}}},
-					})
+					chatCalls++
+					w.WriteHeader(http.StatusInternalServerError)
 				case "/embeddings":
 					embedCalls++
 					if tc.embedStatus != http.StatusOK {
@@ -318,7 +301,7 @@ func TestWarmUp(t *testing.T) {
 			}))
 			defer server.Close()
 
-			c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+			c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
 			err := c.WarmUp(t.Context())
 
 			if tc.wantErr && err == nil {
@@ -327,8 +310,11 @@ func TestWarmUp(t *testing.T) {
 			if !tc.wantErr && err != nil {
 				t.Errorf("WarmUp failed: %v", err)
 			}
-			if embedCalls != tc.wantEmbedCalls {
-				t.Errorf("got %d calls to /embeddings, want %d", embedCalls, tc.wantEmbedCalls)
+			if embedCalls != 1 {
+				t.Errorf("got %d calls to /embeddings, want 1", embedCalls)
+			}
+			if chatCalls != 0 {
+				t.Errorf("got %d calls to /chat/completions, want 0 — WarmUp must not touch the hosted chat API", chatCalls)
 			}
 		})
 	}
@@ -342,7 +328,7 @@ func TestExtract_YearsExperienceFieldRoundTrips(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := modelclient.New(server.URL, "llm-model", server.URL, "embed-model")
+	c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
 	fields, err := c.Extract(t.Context(), "text")
 	if err != nil {
 		t.Fatalf("Extract failed: %v", err)
@@ -350,5 +336,125 @@ func TestExtract_YearsExperienceFieldRoundTrips(t *testing.T) {
 	want := domain.ExtractedFields{Skills: []string{}, YearsExperience: 7.5, Location: ""}
 	if fields.YearsExperience != want.YearsExperience {
 		t.Errorf("got years_experience %v, want %v", fields.YearsExperience, want.YearsExperience)
+	}
+}
+
+// TestExtract_SendsAuthHeaderWhenKeyProvided locks in that the Authorization
+// header is sent only when an API key is configured — DMR needs none, a
+// hosted provider does.
+func TestExtract_SendsAuthHeaderWhenKeyProvided(t *testing.T) {
+	cases := []struct {
+		name     string
+		apiKey   string
+		wantAuth string // expected header value; "" means expect the header absent
+	}{
+		{name: "key provided sends bearer header", apiKey: "sk-test-123", wantAuth: "Bearer sk-test-123"},
+		{name: "empty key sends no auth header", apiKey: ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotAuth string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				gotAuth = req.Header.Get("Authorization")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"choices": []map[string]any{{"message": map[string]any{"content": `{"skills":[],"years_experience":0,"location":""}`}}},
+				})
+			}))
+			defer server.Close()
+
+			c := modelclient.New(server.URL, "llm-model", tc.apiKey, server.URL, "embed-model")
+			if _, err := c.Extract(t.Context(), "text"); err != nil {
+				t.Fatalf("Extract failed: %v", err)
+			}
+
+			if gotAuth != tc.wantAuth {
+				t.Errorf("got Authorization header %q, want %q", gotAuth, tc.wantAuth)
+			}
+		})
+	}
+}
+
+// TestExtract_SendsMaxTokens locks in that chat completion requests cap
+// completion length — a billed hosted API means an unbounded completion
+// is an unbounded bill, unlike free DMR.
+func TestExtract_SendsMaxTokens(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_ = json.NewDecoder(req.Body).Decode(&gotBody)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": `{"skills":[],"years_experience":0,"location":""}`}}},
+		})
+	}))
+	defer server.Close()
+
+	c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
+	if _, err := c.Extract(t.Context(), "text"); err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+
+	maxTokens, ok := gotBody["max_tokens"]
+	if !ok {
+		t.Fatal("expected max_tokens in request body, got none")
+	}
+	if got := int(maxTokens.(float64)); got != constants.MaxExtractionCompletionTokens {
+		t.Errorf("got max_tokens %d, want %d", got, constants.MaxExtractionCompletionTokens)
+	}
+}
+
+// TestExtract_UsageFieldDoesNotBreakParsing confirms a response carrying a
+// provider's usage object (prompt_tokens/completion_tokens/total_tokens,
+// which chatCompletion now logs for cost visibility) still decodes cleanly.
+func TestExtract_UsageFieldDoesNotBreakParsing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": `{"skills":["go"],"years_experience":1,"location":""}`}}},
+			"usage":   map[string]any{"prompt_tokens": 42, "completion_tokens": 7, "total_tokens": 49},
+		})
+	}))
+	defer server.Close()
+
+	c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
+	fields, err := c.Extract(t.Context(), "text")
+	if err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+	if len(fields.Skills) != 1 {
+		t.Errorf("got %d skills, want 1: %+v", len(fields.Skills), fields)
+	}
+}
+
+// TestExtract_RetriesAfterRateLimitHonoringRetryAfter locks in that a 429
+// with a Retry-After hint drives the retry loop's backoff instead of the
+// fixed constants.ExtractionRetryBackoff — DMR never rate-limited, a
+// billed hosted API does, and honoring its hint avoids hammering it with
+// the default 500ms pause.
+func TestExtract_RetriesAfterRateLimitHonoringRetryAfter(t *testing.T) {
+	attempt := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		attempt++
+		if attempt == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": `{"skills":[],"years_experience":0,"location":""}`}}},
+		})
+	}))
+	defer server.Close()
+
+	c := modelclient.New(server.URL, "llm-model", "", server.URL, "embed-model")
+	start := time.Now()
+	if _, err := c.Extract(t.Context(), "text"); err != nil {
+		t.Fatalf("Extract failed: %v", err)
+	}
+	elapsed := time.Since(start)
+
+	if elapsed < time.Second {
+		t.Errorf("elapsed %v, want at least the 1s Retry-After hint, not the fixed %v backoff", elapsed, constants.ExtractionRetryBackoff)
+	}
+	if attempt != 2 {
+		t.Errorf("got %d attempts, want 2", attempt)
 	}
 }

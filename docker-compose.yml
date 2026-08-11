@@ -42,13 +42,17 @@ services:
       kafka:
         condition: service_healthy
     models:
-      - llm
       - embed
     environment:
       DATABASE_URL: postgres://resumes:${POSTGRES_PASSWORD}@postgres:5432/resumes?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       STORAGE_DIR: /data/resumes
       HTTP_PORT: "8080"
+      LLM_URL: ${LLM_URL}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+    ports:
+      - "8080:8080"
     volumes:
       - resumedata:/data/resumes
 
@@ -62,11 +66,13 @@ services:
       kafka:
         condition: service_healthy
     models:
-      - llm
       - embed
     environment:
       DATABASE_URL: postgres://resumes:${POSTGRES_PASSWORD}@postgres:5432/resumes?sslmode=disable
       KAFKA_BROKERS: kafka:9092
+      LLM_URL: ${LLM_URL}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
     volumes:
       - resumedata:/data/resumes
 
@@ -84,8 +90,6 @@ services:
       - app
 
 models:
-  llm:
-    model: ai/llama3.2:latest
   embed:
     model: ai/nomic-embed-text-v1.5
 

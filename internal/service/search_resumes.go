@@ -19,6 +19,13 @@ func NewSearchResumesUseCase(repo ResumeRepository, model ModelClient) *SearchRe
 	return &SearchResumesUseCase{repo: repo, model: model}
 }
 
+// SearchRunner is the seam driver adapters need to call SearchResumesUseCase
+// without depending on its concrete type — satisfied by
+// *SearchResumesUseCase.
+type SearchRunner interface {
+	Run(ctx context.Context, req dto.SearchRequest) (dto.SearchResponse, error)
+}
+
 func (uc *SearchResumesUseCase) Run(ctx context.Context, req dto.SearchRequest) (dto.SearchResponse, error) {
 	queryVec, err := uc.model.Embed(ctx, req.Query)
 	if err != nil {
