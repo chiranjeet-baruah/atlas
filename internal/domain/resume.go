@@ -25,6 +25,17 @@ const (
 	StatusFailed     Status = "FAILED"
 )
 
+// IsTerminal reports whether s is a final state that should make a
+// pipeline stage's Run skip reprocessing on redelivery. This must be
+// checked on Resume.Status, never Resume.Stage: the embed stage in
+// particular has no AdvanceStage call after it (its terminal write is
+// writeStatus(DONE)), so a crash between SaveChunks and that write leaves a
+// row at stage=EMBED/status=PROCESSING — a state the sweeper is meant to
+// redrive, not a state a stage-based guard would mistake for "already done."
+func (s Status) IsTerminal() bool {
+	return s == StatusDone || s == StatusFailed
+}
+
 // Stage tracks which point in the extract → classify → embed pipeline a
 // resume has reached. It is sweeper bookkeeping, not a status: a resume can
 // be StatusProcessing at any of the three stages, or StatusDone/StatusFailed

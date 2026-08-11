@@ -43,14 +43,3 @@ func failResume(ctx context.Context, repo ResumeRepository, id string, procErr e
 	}
 	return procErr
 }
-
-// isTerminal reports whether status is a final state that should make a
-// stage's Run skip reprocessing on redelivery. This must be checked on
-// Resume.Status, never Resume.Stage: the embed stage in particular has no
-// AdvanceStage call after it (its terminal write is writeStatus(DONE)), so
-// a crash between SaveChunks and that write leaves a row at
-// stage=EMBED/status=PROCESSING — a state the sweeper is meant to redrive,
-// not a state a stage-based guard would mistake for "already done."
-func isTerminal(status domain.Status) bool {
-	return status == domain.StatusDone || status == domain.StatusFailed
-}

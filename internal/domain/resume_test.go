@@ -73,3 +73,23 @@ func TestStageValues(t *testing.T) {
 		})
 	}
 }
+
+func TestStatus_IsTerminal(t *testing.T) {
+	cases := []struct {
+		name   string
+		status domain.Status
+		want   bool
+	}{
+		{"pending is not terminal", domain.StatusPending, false},
+		{"processing is not terminal", domain.StatusProcessing, false},
+		{"done is terminal", domain.StatusDone, true},
+		{"failed is terminal", domain.StatusFailed, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.status.IsTerminal(); got != tc.want {
+				t.Errorf("%s.IsTerminal() = %v, want %v", tc.status, got, tc.want)
+			}
+		})
+	}
+}

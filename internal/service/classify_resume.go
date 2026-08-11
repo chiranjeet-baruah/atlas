@@ -29,7 +29,7 @@ func (uc *ClassifyResumeUseCase) Run(ctx context.Context, resumeID string) error
 	if err != nil {
 		return fmt.Errorf("get resume %s: %w", resumeID, err)
 	}
-	if isTerminal(resume.Status) {
+	if resume.Status.IsTerminal() {
 		return nil
 	}
 
