@@ -6,7 +6,7 @@ Bulk-upload PDF resumes, process them asynchronously through a 3-stage Kafka pip
 
 ## Architecture
 
-Hexagonal (ports & adapters): `domain` (framework-free entities) → `service` (use cases + port interfaces) → `adapter/driver` (HTTP via Gin, Kafka consumer — drive the app) / `adapter/driven` (Postgres, Kafka producer, Docker Model Runner client, PDF extraction — driven by the app). See [decisions.md](decisions.md) for the reasoning behind every non-obvious choice.
+Hexagonal (ports & adapters): `domain` (framework-free entities) → `service` (use cases + port interfaces) → `adapter/driver` (HTTP via Gin, Kafka consumer — drive the app) / `adapter/driven` (Postgres, Kafka producer, model client, PDF extraction — driven by the app). The model client speaks OpenAI-compatible chat/completions and embeddings against two independent backends: chat/extraction against a hosted API (e.g. Groq), embeddings against Docker Model Runner. See [decisions.md](decisions.md) for the reasoning behind every non-obvious choice.
 
 ### Ingestion flow
 
@@ -27,7 +27,7 @@ flowchart LR
     WC -->|save fields, stage=EMBED| DB
     WC -->|publish resume_id| K3[[resume.fields.classified]]
     K3 --> WB[embed worker]
-    WB -->|chunk ~512 tokens, embed each| WB
+    WB -->|chunk ~256 words, embed each| WB
     WB -->|UPSERT chunks, status=DONE/FAILED| DB
     SW[redrive sweeper] -.->|reclaim stale resume,<br/>republish to its stage's topic| K1
     SW -.-> K2
@@ -47,11 +47,13 @@ flowchart LR
 
 ## Running it
 
+Requires a hosted OpenAI-compatible chat API key (e.g. from [Groq](https://console.groq.com)) — set `LLM_URL`, `LLM_MODEL`, `LLM_API_KEY` in `.env` (see `.env.example`) before starting; `serve`/`worker` exit immediately without them.
+
 ```bash
 docker compose up --build
 ```
 
-First run pulls the LLM/embedding models via Docker Model Runner (`ai/llama3.2` and `ai/nomic-embed-text-v1.5`) — expect that step to take a few minutes, and expect the very first extraction request afterward to pay an extra ~25s while the LLM loads into the runner (see `LLMAttemptTimeout` in `internal/constants/constants.go`).
+First run pulls the embedding model via Docker Model Runner (`ai/nomic-embed-text-v1.5`) — expect that step to take a few minutes, and expect the very first embed request afterward to pay a one-time cold-start cost while the model loads into the runner (see `EmbedAttemptTimeout` in `internal/constants/constants.go`). Chat/extraction has no such cold-start — it runs against the hosted API.
 
 ## Try it with the sample resumes
 

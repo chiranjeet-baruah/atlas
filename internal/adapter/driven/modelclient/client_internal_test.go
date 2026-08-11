@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func TestExtractOnce_DerivesFreshDeadlinePerAttempt(t *testing.T) {
 	}))
 	defer server.Close()
 
-	c := New(server.URL, "llm-model", server.URL, "embed-model")
+	c := New(server.URL, "llm-model", "", server.URL, "embed-model")
 	transport := &deadlineCapturingTransport{}
 	c.httpClient.Transport = transport
 
@@ -79,7 +80,7 @@ func TestExtractOnce_ParentDeadlineDoesNotShrinkOrExtendAttemptBudget(t *testing
 	}))
 	defer server.Close()
 
-	c := New(server.URL, "llm-model", server.URL, "embed-model")
+	c := New(server.URL, "llm-model", "", server.URL, "embed-model")
 	transport := &deadlineCapturingTransport{}
 	c.httpClient.Transport = transport
 
@@ -95,5 +96,74 @@ func TestExtractOnce_ParentDeadlineDoesNotShrinkOrExtendAttemptBudget(t *testing
 	distance := deadline.Sub(before)
 	if distance > constants.LLMAttemptTimeout+time.Second {
 		t.Errorf("request deadline was %v out, want close to LLMAttemptTimeout (%v), not the parent's 1-hour budget", distance, constants.LLMAttemptTimeout)
+	}
+}
+
+// TestParseRetryAfter covers both forms a hosted provider might send —
+// integer seconds (what OpenAI-compatible providers, incl. Groq, send) and
+// the HTTP-date form — plus the "no usable hint" cases that must fall back
+// to 0 so the caller uses its own default backoff.
+func TestParseRetryAfter(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+		want  time.Duration
+	}{
+		{name: "integer seconds", value: "5", want: 5 * time.Second},
+		{name: "zero seconds", value: "0", want: 0},
+		{name: "empty string", value: "", want: 0},
+		{name: "garbage string", value: "not-a-duration", want: 0},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseRetryAfter(tc.value); got != tc.want {
+				t.Errorf("parseRetryAfter(%q) = %v, want %v", tc.value, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("HTTP-date form", func(t *testing.T) {
+		future := time.Now().Add(10 * time.Second).UTC()
+		got := parseRetryAfter(future.Format(http.TimeFormat))
+		if got <= 0 || got > 11*time.Second {
+			t.Errorf("parseRetryAfter(HTTP-date ~10s out) = %v, want roughly 10s", got)
+		}
+	})
+}
+
+// TestExtractOnce_TruncatesTextOverMaxExtractionTextChars locks in the
+// prompt-size cost cap: a billed hosted API charges per input token, so an
+// abnormally long resume must not translate into an unbounded prompt.
+func TestExtractOnce_TruncatesTextOverMaxExtractionTextChars(t *testing.T) {
+	var gotContent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Messages []struct {
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		gotContent = body.Messages[0].Content
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]any{"content": `{"skills":[],"years_experience":0,"location":""}`}}},
+		})
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "llm-model", "", server.URL, "embed-model")
+	longText := strings.Repeat("a", constants.MaxExtractionTextChars+5000)
+	if _, err := c.extractOnce(context.Background(), longText, 1); err != nil {
+		t.Fatalf("extractOnce failed: %v", err)
+	}
+
+	const marker = "Resume text:\n"
+	idx := strings.Index(gotContent, marker)
+	if idx == -1 {
+		t.Fatalf("prompt marker %q not found in sent content", marker)
+	}
+	gotTextChars := len(gotContent[idx+len(marker):])
+	if gotTextChars > constants.MaxExtractionTextChars {
+		t.Errorf("sent %d chars of resume text, want at most MaxExtractionTextChars (%d)", gotTextChars, constants.MaxExtractionTextChars)
 	}
 }

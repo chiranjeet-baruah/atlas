@@ -143,7 +143,9 @@ const (
 
 	// MaxExtractionRetries bounds retries when the LLM returns invalid JSON
 	// for structured field extraction (small/local models are the highest-risk
-	// component for schema adherence).
+	// component for schema adherence). Retries only fire on failure, so this
+	// also bounds worst-case per-resume token spend against a billed hosted
+	// API to 3x one call's cost.
 	MaxExtractionRetries = 3
 
 	// ClassifyStageTimeout bounds the classify stage's consumer: 3
@@ -151,25 +153,41 @@ const (
 	// above) plus slack for the surrounding save/publish work.
 	ClassifyStageTimeout = time.Duration(MaxExtractionRetries)*LLMAttemptTimeout + 30*time.Second
 
+	// MaxExtractionTextChars caps how much resume text is sent in a single
+	// Extract prompt. DMR was free, so an uncapped prompt never cost
+	// anything; a hosted API bills per input token, so an abnormally long
+	// resume must not translate into unbounded prompt cost. Set generously
+	// above realistic resume length so truncation only ever bites
+	// pathological documents — same philosophy as MaxOCRPages/MaxUploadFiles.
+	MaxExtractionTextChars = 20_000
+
+	// MaxExtractionCompletionTokens caps a single chat completion's output
+	// length. The extraction response is always a small JSON object (a
+	// skills array plus two scalar fields); nothing legitimate needs more
+	// than this, and capping it bounds worst-case completion cost against a
+	// billed hosted API if a model ever starts rambling instead of stopping
+	// at the JSON object.
+	MaxExtractionCompletionTokens = 500
+
 	// ExtractionRetryBackoff is a short pause between LLM extraction
 	// attempts. Without it, a retry against a model that just failed (e.g.
 	// mid-restart, or momentarily overloaded) fires immediately with zero
 	// delay.
 	ExtractionRetryBackoff = 500 * time.Millisecond
 
-	// WarmUpInterval is how often the worker proactively re-warms the LLM
-	// and embedding models (see modelclient.Client.WarmUp) by issuing a
-	// trivial call to each, so that a real resume request rarely lands on
-	// a cold model. Unlike every other duration in this file, this one is
-	// NOT measured — Docker Model Runner's idle-eviction window is not
-	// observable from this app (the only related endpoint checked,
-	// tokenize, 404s per decisions.md, and no eviction-window equivalent
-	// is documented either). 4 minutes is a deliberately short,
-	// conservative guess: cheap even if wrong (one short LLM call plus
-	// one short embed call), and short enough to very likely beat
-	// whatever the real eviction window is in practice. Re-measure and
-	// replace this comment if Model Runner's actual eviction window is
-	// ever confirmed.
+	// WarmUpInterval is how often the worker proactively re-warms the
+	// embedding model (see modelclient.Client.WarmUp) by issuing a trivial
+	// embed call, so that a real resume request rarely lands on a cold
+	// model. Chat/extraction moved to a hosted API with no cold-start to
+	// warm, so this only covers the embedding model now. Unlike every other
+	// duration in this file, this one is NOT measured — Docker Model
+	// Runner's idle-eviction window is not observable from this app (the
+	// only related endpoint checked, tokenize, 404s per decisions.md, and
+	// no eviction-window equivalent is documented either). 4 minutes is a
+	// deliberately short, conservative guess: cheap even if wrong (one
+	// short embed call), and short enough to very likely beat whatever the
+	// real eviction window is in practice. Re-measure and replace this
+	// comment if Model Runner's actual eviction window is ever confirmed.
 	WarmUpInterval = 4 * time.Minute
 
 	// EmbeddingDimension is the output size of ai/nomic-embed-text-v1.5.
