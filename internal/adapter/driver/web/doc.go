@@ -9,6 +9,9 @@
 // target empty with the error invisible to the user. These handlers render
 // the error message and slug inline inside the fragment instead, at 200.
 // Full-page handlers (the "*_page" endpoints reached by navigation) have no
-// such constraint and go through the normal renderError path (404 for
-// domain.ErrNotFound, 500 otherwise).
+// such constraint for use-case errors and go through the normal renderError
+// path (404 for domain.ErrNotFound, 500 otherwise). Input-validation errors
+// on a full-page handler are a separate case and may still render inline at
+// 200 (see NewUploadSubmitHandler in upload.go and NewBatchLookupHandler in
+// processing.go for the deliberate exceptions).
 package web

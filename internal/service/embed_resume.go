@@ -27,9 +27,10 @@ func NewEmbedResumeUseCase(repo ResumeRepository, model ModelClient) *EmbedResum
 //
 // Unlike the other two stages, embed has no AdvanceStage call after it:
 // it's the last stage, so its terminal write is writeStatus(DONE) instead.
-// That makes the isTerminal(resume.Status) guard below load-bearing in a
-// way the other stages' guards aren't — see isTerminal's doc comment for
-// why checking Stage instead would deadlock a redriven resume here.
+// That makes the terminal-status guard in beginStage load-bearing in a
+// way the other stages' guards aren't — see domain.Status.IsTerminal's
+// doc comment for why checking Stage instead would deadlock a redriven
+// resume here.
 // SaveChunks's ON CONFLICT (resume_id, chunk_index) upsert (see
 // postgres.Repository.SaveChunks) is what makes a redundant re-run of this
 // stage safe: redundant re-embedding is wasted work, not a correctness
