@@ -1,5 +1,7 @@
 # atlas
 
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/chiranjeet-baruah/atlas?utm_source=oss&utm_medium=github&utm_campaign=chiranjeet-baruah%2Fatlas&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+
 High-performance PDF ingestion and indexing service for AI-powered knowledge retrieval and vector search.
 
 Bulk-upload PDF resumes, process them asynchronously through a 3-stage Kafka pipeline (text extraction → LLM field extraction → chunked embeddings), and search them with a hybrid semantic + filtered query — all via `docker compose up`.
